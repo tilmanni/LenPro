@@ -21,9 +21,6 @@ class ConstantEventGenerator(EventGenerator):
     def generate_event(self, previous_event = None) -> Any:
         return self.constant_event
 
-    def __str__(self) -> str:
-        return f"Constant Event Generator(constant event = '{self.constant_event}')"
-
     def to_dict(self) -> dict:
         return {
             "name": "ConstantEventGenerator",
