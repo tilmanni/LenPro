@@ -25,14 +25,8 @@ from lenpro.stream_generation import (
 ORIGINAL_EVENT = 1
 SYNTHETIC_EVENT = 2
 
-#EPSILONS = [1]
-#EPSILONS = [0.1, 0.3, 0.5, 0.7, 1.0, 2.0]
 EPSILONS = [0.1, 1, 2, 5, 10, 20]
-#DATA_SET_SIZES = [2]
-#DATA_SET_SIZES = [500, 5000, 50000]
 DATA_SET_SIZES = [5000]
-#MAXIMUM_LENGTHS = [5]
-#MAXIMUM_LENGTHS = [20, 60, 80]
 MAXIMUM_LENGTHS = [5, 10, 20, 40]
 
 
@@ -50,7 +44,8 @@ def register_measures(agg):
 
     for measure in [
         entry_level_measures.RelativeErrorMeasure(metric=naive_length_measure, sanity_bound=1),
-        entry_level_measures.RelativeErrorMeasureProtocolDependent(estimator_name="length_estimator", sanity_bound=1),
+        entry_level_measures.RelativeErrorMeasureProtocolDependent(estimator_name="length_estimator", metric=naive_length_measure, sanity_bound=1),
+        entry_level_measures.PrefixMeanRelativeErrorMeasureProtocolDependent(estimator_name="prefix_length_estimator", metric=naive_length_measure, sanity_bound=1),
         entry_level_measures.FractionRetainedEventsMeasure(
             is_original=is_original
         ),
@@ -62,7 +57,7 @@ def register_measures(agg):
 
     for measure in [
         aggregate_measures.MeanMeasure(),
-        #aggregate_measures.ConfidenceIntervalMeasure(),
+        aggregate_measures.ConfidenceIntervalMeasure(),
     ]:
         agg.register_aggregate_measure(aggregate_measure=measure)
 

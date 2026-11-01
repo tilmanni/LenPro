@@ -48,14 +48,6 @@ def store_result(result, file_name="run", directory="results"):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
 
-    # Avoid colons in filenames, for Windows compatibility.
-    #timestamp = datetime.datetime.now(
-    #    datetime.timezone.utc
-    #).strftime("%Y%m%dT%H%M%S%fZ")
-
-    #timestamped_directory = Path(directory / timestamp)
-    #timestamped_directory.mkdir(parents=True, exist_ok=True)
-
     output_path = directory / f"{file_name}.json"
 
     with output_path.open("w", encoding="utf-8") as file:

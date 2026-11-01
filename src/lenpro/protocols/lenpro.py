@@ -5,14 +5,14 @@ from typing import Any
 from lenpro.protocols import ldp_protocol
 from lenpro.mechanisms import mechanisms
 from lenpro.stream_generation import event_generators
-from lenpro.estimators.lenpro_estimators import LenProEstimator
+from lenpro.estimators.lenpro_estimators import LenProLengthEstimator, LenProPrefixLengthMedianEstimator
 
 Stream = Sequence[Any]
 
 
 class LenPro(ldp_protocol.LDPProtocol):
 
-    def __init__(self, epsilon, delta_length, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, rng = None) -> None:
+    def __init__(self, epsilon, delta_length, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, rng: np.random.Generator | None = None,) -> None:
         super().__init__(epsilon=epsilon)
         if epsilon == 0:
             raise ValueError(
@@ -31,7 +31,8 @@ class LenPro(ldp_protocol.LDPProtocol):
         #self.p = (1 - np.pow(np.e, (-epsilon / delta_length)))
         self.perturbing_mechanism = perturbing_mechanism
         self.synthetic_event_generator = synthetic_event_generator
-        self.length_estimator = LenProEstimator()
+        self.length_estimator = LenProLengthEstimator()
+        self.prefix_length_estimator = LenProLengthEstimator()
         self._reset_connection()
 
     def _reset_connection(self) -> None:

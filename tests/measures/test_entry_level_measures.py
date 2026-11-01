@@ -3,12 +3,16 @@ from unittest.mock import Mock
 
 import pytest
 
+from lenpro.estimators.estimator import Estimator
+from lenpro.protocols.ldp_protocol import LDPProtocol
 from lenpro.measures.entry_level_measures import (
     EntryLevelMeasure,
     FractionRetainedEventsMeasure,
     FractionSyntheticEventsMeasure,
+    Metric,
     RelativeErrorMeasure,
     RelativeErrorMeasureProtocolDependent,
+    PrefixMeanRelativeErrorMeasureProtocolDependent,
 )
 
 
@@ -73,13 +77,18 @@ def test_relative_error_to_dict():
 
 
 def test_protocol_dependent_relative_error():
-    estimator = Mock()
-    estimator.estimate.side_effect = [10, 7]
+    estimator = Mock(spec=Estimator)
+    estimator.estimate.side_effect = [7]
 
-    protocol = SimpleNamespace(length_estimator=estimator)
+    metric = Mock(spec=Metric)
+    metric.side_effect = [10]
+
+    protocol = Mock(spec=LDPProtocol)
+    protocol.length_estimator = estimator
 
     measure = RelativeErrorMeasureProtocolDependent(
         estimator_name="length_estimator",
+        metric=metric
     )
 
     original = ["original"]
@@ -92,14 +101,18 @@ def test_protocol_dependent_relative_error():
     )
 
     assert result == pytest.approx(0.3)
-    assert estimator.estimate.call_count == 2
-    estimator.estimate.assert_any_call(original)
+    assert estimator.estimate.call_count == 1
+    assert metric.call_count == 1
+    metric.assert_any_call(original)
     estimator.estimate.assert_any_call(perturbed)
 
 
 def test_protocol_dependent_measure_requires_protocol():
+    metric = Mock(spec=Metric)
+
     measure = RelativeErrorMeasureProtocolDependent(
         estimator_name="length_estimator",
+        metric=metric
     )
 
     with pytest.raises(
@@ -110,10 +123,13 @@ def test_protocol_dependent_measure_requires_protocol():
 
 
 def test_protocol_dependent_measure_requires_estimator():
-    protocol = SimpleNamespace()
+    protocol = Mock(spec=LDPProtocol)
+    metric = Mock(spec=Metric)
+
 
     measure = RelativeErrorMeasureProtocolDependent(
         estimator_name="missing_estimator",
+        metric=metric
     )
 
     with pytest.raises(
@@ -123,10 +139,15 @@ def test_protocol_dependent_measure_requires_estimator():
         measure.process_data([], [], protocol=protocol)
 
 
+
 def test_protocol_dependent_measure_to_dict():
+    metric = Mock(spec=Metric)
+
+
     measure = RelativeErrorMeasureProtocolDependent(
         estimator_name="length_estimator",
         sanity_bound=2,
+        metric=metric
     )
 
     assert measure.to_dict() == {
@@ -134,6 +155,68 @@ def test_protocol_dependent_measure_to_dict():
         "sanity_bound": 2,
         "estimator_name": "length_estimator",
     }
+
+
+def test_prefix_mean_relative_error():
+    estimator = Mock(spec=Estimator)
+    estimator.estimate.side_effect = [0, 0, 1, 2, 3, 3, 4, 7]
+
+    metric = Mock(spec=Metric)
+    metric.side_effect = [0, 1, 2, 3, 3, 3, 4, 5]
+
+    protocol = Mock(spec=LDPProtocol)
+    protocol.prefix_length_estimator = estimator
+
+    measure = PrefixMeanRelativeErrorMeasureProtocolDependent(
+        estimator_name="prefix_length_estimator",
+        metric=metric
+    )
+
+    original = ["original"] * 8
+    perturbed = ["perturbed"] * 8
+
+    result = measure.process_data(
+        original,
+        perturbed,
+        protocol=protocol,
+    )
+
+    assert result == pytest.approx(67 / 240)
+    assert estimator.estimate.call_count == 8
+    assert metric.call_count == 8
+    metric.assert_any_call(original)
+    estimator.estimate.assert_any_call(perturbed)
+
+
+def test_prefix_mean_relative_error_different_lengths():
+    estimator = Mock(spec=Estimator)
+    estimator.estimate.side_effect = [4, 5, 5, 6]
+
+    metric = Mock(spec=Metric)
+    metric.side_effect = [4, 5, 6, 6]
+
+    protocol = Mock(spec=LDPProtocol)
+    protocol.prefix_length_estimator = estimator
+
+    measure = PrefixMeanRelativeErrorMeasureProtocolDependent(
+        estimator_name="prefix_length_estimator",
+        metric=metric
+    )
+
+    original = ["original"] * 3
+    perturbed = ["perturbed"] * 4
+
+    result = measure.process_data(
+        original,
+        perturbed,
+        protocol=protocol,
+    )
+
+    assert result == pytest.approx(1 / 24)
+    assert estimator.estimate.call_count == 4
+    assert metric.call_count == 4
+    metric.assert_any_call(original)
+    estimator.estimate.assert_any_call(perturbed)
 
 
 def test_fraction_retained_events():

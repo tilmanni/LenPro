@@ -12,7 +12,7 @@ from scipy.stats import t
 # ---------------------------------------------------------------------------
 
 # insert run directory for run here. 
-RUN_DIRECTORY = Path("20261026T124009120502Z")
+RUN_DIRECTORY = Path("20261031T180421014966Z")
 RESULTS_DIRECTORY = Path("results") / RUN_DIRECTORY
 OUTPUT_DIRECTORY = Path("plots/comparisons") / RUN_DIRECTORY
 CONFIDENCE_LEVEL = 0.95
@@ -24,6 +24,7 @@ SELECTED_MEASURES = None
 MEASURE_LABELS = {
     "RelativeErrorMeasure": "Mean relative error length",
     "RelativeErrorMeasureProtocolDependent": "Mean relative error length estimator",
+    "PrefixMeanRelativeErrorMeasureProtocolDependent": "Mean relative error of prefix length estimatior",
     "FractionRetainedEventsMeasure": "Mean fraction of retained events",
     "FractionSyntheticEventsMeasure": "Mean fraction of synthetic events",
     "EmptyOutputProbabilityMeasure": "Empty output probability",

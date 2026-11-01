@@ -96,7 +96,7 @@ def test_run_simulation_without_protocols_returns_empty_list():
 
     assert result == []
 
-"""
+
 def test_measure_run():
     aggregator = Aggregator()
 
@@ -173,13 +173,13 @@ def test_measure_run():
 
     assert entry_measure.process_data.call_args_list == [
         call(
-            ["original-1", "original-2"],
-            ["perturbed-1", None],
+            original_data=["original-1", "original-2"],
+            perturbed_data=["perturbed-1", None],
             protocol=protocol,
         ),
         call(
-            ["original-3"],
-            ["perturbed-2"],
+            original_data=["original-3"],
+            perturbed_data=["perturbed-2"],
             protocol=protocol,
         ),
     ]
@@ -194,7 +194,7 @@ def test_measure_run():
             ["perturbed-1", None],
             ["perturbed-2"],
         ],
-"""
+    )
 
 def test_every_aggregate_measure_is_applied_to_every_entry_measure():
     aggregator = Aggregator()

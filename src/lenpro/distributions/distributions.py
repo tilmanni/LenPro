@@ -13,7 +13,7 @@ class Distribution(ABC):
 
 class UniformDistribution(Distribution):
 
-    def __init__(self, low, high, rng = None) -> None:
+    def __init__(self, low, high, rng: np.random.Generator | None = None,) -> None:
         self.rng = rng if rng is not None else np.random.default_rng()
         self.high = high
         self.low = low
@@ -30,7 +30,7 @@ class UniformDistribution(Distribution):
 
 class GaussianDistribution(Distribution):
 
-    def __init__(self, mean, scale, rng = None) -> None:
+    def __init__(self, mean, scale, rng: np.random.Generator | None = None,) -> None:
         self.rng = rng if rng is not None else np.random.default_rng()
         self.mean = mean
         self.scale = scale
@@ -47,7 +47,7 @@ class GaussianDistribution(Distribution):
 
 class ZipfDistribution(Distribution):
 
-    def __init__(self, a, rng = None) -> None:
+    def __init__(self, a, rng: np.random.Generator | None = None,) -> None:
         self.rng = rng if rng is not None else np.random.default_rng()
         self.a = a
 

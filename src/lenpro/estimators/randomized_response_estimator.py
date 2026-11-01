@@ -2,7 +2,7 @@ import numpy as np
 from lenpro.estimators import estimator
 from lenpro.protocols import randomized_response
 
-class RandomizedResponseEstimator(estimator.Estimator):
+class RandomizedResponseLengthEstimator(estimator.Estimator):
 
     def __init__(self, randomized_response: randomized_response.RandomizedResponse):
         self.p = randomized_response.p
@@ -17,7 +17,7 @@ class RandomizedResponseEstimator(estimator.Estimator):
 
     def to_dict(self) -> dict:
         return {
-            "name": "RandomizedResponseEstimator",
+            "name": "RandomizedResponseLengthEstimator",
             "p": self.p,
             "q": self.q,
         }

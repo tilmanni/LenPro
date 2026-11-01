@@ -1,27 +1,23 @@
 import numpy as np
-from typing import Any
 
-
-#from lenpro.estimators import estimator
 from lenpro.estimators.estimator import Estimator
 
 
-class LenProEstimator(Estimator):
+class LenProLengthEstimator(Estimator):
     
     def estimate(self, stream) -> float:
         return sum(x is not None for x in stream)
 
     def to_dict(self) -> dict:
         return {
-            "name": "LenProEstimator",
+            "name": "LenProLengthEstimator",
         }
 
 
 # For Prefix sum 
-class LenProMedianEstimator(Estimator):
+class LenProPrefixLengthMedianEstimator(Estimator):
     def __init__(self, p) -> None:
         self.expected_median = ((1 - np.pow((1-p), (1 / p) + 1)) / p) - 1
-
 
     def estimate(self, stream) -> float:
         non_nones = sum(x is not None for x in stream)
@@ -32,6 +28,6 @@ class LenProMedianEstimator(Estimator):
 
     def to_dict(self) -> dict:
         return {
-            "name": "LenProMedianEstimator",
+            "name": "LenProPrefixLengthMedianEstimator",
             "expected_median": self.expected_median,
         }
