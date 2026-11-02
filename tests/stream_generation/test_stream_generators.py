@@ -4,13 +4,14 @@ import pytest
 
 from lenpro.stream_generation.event_generators import EventGenerator
 from lenpro.stream_generation.length_generators import LengthGenerator
+from lenpro.stream_generation.start_point_generators import StartPointGenerator, CenteredStreamStartPointGenerator
 from lenpro.stream_generation.stream_generators import (
     StandardStreamGenerator,
     StreamGenerator,
 )
 
 
-def make_generator(length, events, fixed_length=None):
+def make_generator(length, events, fixed_horizon=None, start_point_generator=None):
     """Create a stream generator with mocked dependencies."""
     length_generator = Mock(spec=LengthGenerator)
     length_generator.generate_length.return_value = length
@@ -21,7 +22,8 @@ def make_generator(length, events, fixed_length=None):
     generator = StandardStreamGenerator(
         length_generator=length_generator,
         event_generator=event_generator,
-        fixed_length=fixed_length,
+        fixed_horizon=fixed_horizon,
+        start_point_generator=start_point_generator
     )
 
     return generator, length_generator, event_generator
@@ -56,12 +58,13 @@ def test_generate_empty_stream():
     assert stream == []
     event_generator.generate_event.assert_not_called()
 
-
+# Centered Stream
 def test_short_stream_is_padded_evenly():
     generator, _, event_generator = make_generator(
         length=2,
         events=["a", "b"],
-        fixed_length=6,
+        fixed_horizon=6,
+        start_point_generator=CenteredStreamStartPointGenerator()
     )
 
     stream = generator.generate_stream()
@@ -70,12 +73,13 @@ def test_short_stream_is_padded_evenly():
     assert len(stream) == 6
     assert event_generator.generate_event.call_count == 2
 
-
+# Centered Stream 
 def test_short_stream_with_odd_padding_difference():
     generator, _, event_generator = make_generator(
         length=2,
         events=["a", "b"],
-        fixed_length=5,
+        fixed_horizon=5,
+        start_point_generator=CenteredStreamStartPointGenerator()
     )
 
     stream = generator.generate_stream()
@@ -86,12 +90,13 @@ def test_short_stream_with_odd_padding_difference():
     assert len(stream) == 5
     assert event_generator.generate_event.call_count == 2
 
-
+# Centered Stream
 def test_stream_longer_than_fixed_length_is_truncated():
     generator, _, event_generator = make_generator(
         length=5,
         events=["a", "b", "c"],
-        fixed_length=3,
+        fixed_horizon=3,
+        start_point_generator=CenteredStreamStartPointGenerator()
     )
 
     stream = generator.generate_stream()
@@ -100,12 +105,12 @@ def test_stream_longer_than_fixed_length_is_truncated():
     assert len(stream) == 3
     assert event_generator.generate_event.call_count == 3
 
-
+# Centered Stream
 def test_stream_equal_to_fixed_length_is_not_padded():
     generator, _, event_generator = make_generator(
         length=3,
         events=["a", "b", "c"],
-        fixed_length=3,
+        fixed_horizon=3,
     )
 
     stream = generator.generate_stream()
@@ -168,7 +173,7 @@ def test_to_dict():
     generator = StandardStreamGenerator(
         length_generator=length_generator,
         event_generator=event_generator,
-        fixed_length=10,
+        fixed_horizon=10,
     )
 
     assert generator.to_dict() == {
@@ -179,7 +184,8 @@ def test_to_dict():
         "event_generator": {
             "name": "ExampleEventGenerator",
         },
-        "fixed_length": 10,
+        "fixed_horizon": 10,
+        "start_point_generator": None,
     }
 
     length_generator.to_dict.assert_called_once_with()

@@ -6,16 +6,32 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import t
 
+import re
+
+from lenpro.distributions.distributions import (
+    GaussianDistribution,
+    UniformDistribution,
+    ZipfDistribution,
+)
+from lenpro.stream_generation.length_generators import (
+    DistributionLengthGenerator,
+)
+from lenpro.stream_generation.start_point_generators import (
+    DistributionStartPointGenerator,
+)
+
 
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
 
 # insert run directory for run here. 
-RUN_DIRECTORY = Path("20261031T180421014966Z")
+RUN_DIRECTORY = Path("20261102T121149056624Z")
 RESULTS_DIRECTORY = Path("results") / RUN_DIRECTORY
 OUTPUT_DIRECTORY = Path("plots/comparisons") / RUN_DIRECTORY
 CONFIDENCE_LEVEL = 0.95
+DISTRIBUTION_SAMPLES = 10_000
+DISTRIBUTION_SEED = 42
 
 # Set to {"RelativeErrorMeasure"} to plot only relative error.
 # None means plot every aggregate mean and global measure.
@@ -71,10 +87,15 @@ def load_measurements(directory):
                 "epsilon": protocol["epsilon"],
                 "delta_length": protocol["delta_length"],
                 "data_set_size": run["data_set_size"],
-                "max_length": generator["fixed_length"],
+                "fixed_horizon": generator.get("fixed_horizon"),
+                "stream_generator_config": json.dumps(
+                    generator,
+                    sort_keys=True,
+                ),
                 "distribution": distribution["name"],
                 "distribution_config": json.dumps(
-                    distribution, sort_keys=True
+                    distribution, 
+                    sort_keys=True
                 ),
             }
 
@@ -114,7 +135,7 @@ def load_measurements(directory):
     observation_key = [
         "distribution_config",
         "data_set_size",
-        "max_length",
+        "fixed_horizon",
         "delta_length",
         "protocol",
         "epsilon",
@@ -142,7 +163,7 @@ def summarize_repetitions(df, confidence):
         "distribution",
         "distribution_config",
         "data_set_size",
-        "max_length",
+        "fixed_horizon",
         "delta_length",
         "protocol",
         "epsilon",
@@ -196,7 +217,7 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
         )
 
     sizes = sorted(selected["data_set_size"].unique())
-    lengths = sorted(selected["max_length"].unique())
+    horizons = sorted(selected["fixed_horizon"].unique())
     epsilons = sorted(selected["epsilon"].unique())
     label = MEASURE_LABELS.get(measure, measure)
 
@@ -214,8 +235,8 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
     for distribution_name, distribution_df in selected.groupby("distribution"):
         fig, axes = plt.subplots(
             len(sizes),
-            len(lengths),
-            figsize=(5 * len(lengths), 3.6 * len(sizes)),
+            len(horizons),
+            figsize=(5 * len(horizons), 3.6 * len(sizes)),
             sharex=True,
             sharey=True,
             squeeze=False,
@@ -225,11 +246,11 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
         legend_entries = {}
 
         for row, size in enumerate(sizes):
-            for column, length in enumerate(lengths):
+            for column, horizon in enumerate(horizons):
                 ax = axes[row, column]
                 panel = distribution_df[
                     (distribution_df["data_set_size"] == size)
-                    & (distribution_df["max_length"] == length)
+                    & (distribution_df["fixed_horizon"] == horizon)
                 ]
 
                 if (
@@ -263,7 +284,7 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
                             alpha=0.18,
                         )
 
-                ax.set_title(f"N={size:,}, max length={length}")
+                ax.set_title(f"N={size:,}, horizon={horizon}")
                 ax.set_xticks(epsilons)
                 ax.set_ylim(*y_limits)
                 ax.grid(True, alpha=0.3)
@@ -307,22 +328,351 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
         print(f"Saved {output_path}")
 
 
+
+def distribution_from_dict(
+    configuration: dict,
+    rng: np.random.Generator,
+):
+    """Reconstruct a distribution from its serialized configuration."""
+    name = configuration["name"]
+
+    if name == "UniformDistribution":
+        return UniformDistribution(
+            low=configuration["low"],
+            high=configuration["high"],
+            rng=rng,
+        )
+
+    if name == "GaussianDistribution":
+        return GaussianDistribution(
+            mean=configuration["mean"],
+            scale=configuration["scale"],
+            rng=rng,
+        )
+
+    if name == "ZipfDistribution":
+        return ZipfDistribution(
+            a=configuration["a"],
+            rng=rng,
+        )
+
+    raise ValueError(f"Unsupported distribution: {name!r}")
+
+def plot_discrete_samples(
+    ax: plt.Axes,
+    samples,
+    *,
+    title: str,
+    x_label: str,
+    max_value: int | None = None,
+) -> None:
+    samples = np.asarray(samples, dtype=int)
+    total_samples = len(samples)
+
+    cut_off = 0
+
+    if max_value is not None:
+        cut_off = int(np.sum(samples > max_value))
+        visible_samples = samples[samples <= max_value]
+    else:
+        visible_samples = samples
+
+    if visible_samples.size == 0:
+        ax.text(
+            0.5,
+            0.5,
+            "No samples in displayed range",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+        )
+    else:
+        values, counts = np.unique(
+            visible_samples,
+            return_counts=True,
+        )
+
+        ax.bar(
+            values,
+            counts / total_samples,
+            width=0.9,
+            edgecolor="black",
+        )
+
+    if cut_off:
+        title += (
+            f"\n{cut_off} samples greater than "
+            f"{max_value} not shown"
+        )
+
+    ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Relative frequency")
+    ax.grid(axis="y", alpha=0.3)
+
+def sample_stream_generator_configuration(
+    generator_configuration: dict,
+    amount_of_samples: int,
+    seed: int,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """
+    Resample lengths and start points from a serialized stream-generator
+    configuration.
+
+    These are new samples and are not necessarily the samples used in the
+    original experiment.
+    """
+    seed_sequence = np.random.SeedSequence(seed)
+    length_seed, start_seed = seed_sequence.spawn(2)
+
+    length_configuration = generator_configuration.get(
+        "length_generator"
+    )
+
+    if (
+        length_configuration is None
+        or length_configuration.get("name")
+        != "DistributionLengthGenerator"
+    ):
+        return None, None
+
+    length_distribution_configuration = (
+        length_configuration["distribution"]
+    )
+
+    length_distribution = distribution_from_dict(
+        length_distribution_configuration,
+        np.random.default_rng(length_seed),
+    )
+
+    length_generator = DistributionLengthGenerator(
+        length_distribution
+    )
+
+    sampled_lengths = np.array(
+        [
+            length_generator.generate_length()
+            for _ in range(amount_of_samples)
+        ],
+        dtype=int,
+    )
+
+    start_configuration = generator_configuration.get(
+        "start_point_generator"
+    )
+    fixed_horizon = generator_configuration.get(
+        "fixed_horizon"
+    )
+
+    if (
+        start_configuration is None
+        or start_configuration.get("name")
+        != "DistributionStartPointGenerator"
+        or fixed_horizon is None
+    ):
+        return sampled_lengths, None
+
+    start_distribution = distribution_from_dict(
+        start_configuration["distribution"],
+        np.random.default_rng(start_seed),
+    )
+
+    start_generator = DistributionStartPointGenerator(
+        start_distribution
+    )
+
+    # This mirrors StandardStreamGenerator: lengths exceeding the horizon
+    # are restricted to the horizon before generating a start point.
+    effective_lengths = np.minimum(
+        sampled_lengths,
+        fixed_horizon,
+    )
+
+    sampled_start_points = np.array(
+        [
+            start_generator.generate_start_point(
+                fixed_horizon=fixed_horizon,
+                length=int(length),
+            )
+            for length in effective_lengths
+        ],
+        dtype=int,
+    )
+
+    return sampled_lengths, sampled_start_points
+
+def safe_file_name(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
+
+
+def plot_sampling_distributions(
+    results_directory: Path,
+    output_directory: Path,
+    *,
+    amount_of_samples: int = 10_000,
+    seed: int = 42,
+) -> None:
+    """
+    Plot each unique distribution-based length/start-point configuration
+    found in the result files.
+    """
+    configurations: dict[str, dict] = {}
+
+    for file_path in sorted(results_directory.glob("*.json")):
+        with file_path.open("r", encoding="utf-8") as file:
+            run = json.load(file)
+
+        generator_configuration = run.get(
+            "stream_generator"
+        )
+
+        if generator_configuration is None:
+            continue
+
+        key = json.dumps(
+            generator_configuration,
+            sort_keys=True,
+        )
+
+        configurations.setdefault(
+            key,
+            generator_configuration,
+        )
+
+    sampling_directory = (
+        output_directory / "sampling_distributions"
+    )
+    sampling_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    for index, configuration in enumerate(
+        configurations.values(),
+        start=1,
+    ):
+        sampled_lengths, sampled_start_points = (
+            sample_stream_generator_configuration(
+                configuration,
+                amount_of_samples=amount_of_samples,
+                seed=seed + index,
+            )
+        )
+
+        if sampled_lengths is None:
+            continue
+
+        number_of_plots = (
+            2 if sampled_start_points is not None else 1
+        )
+
+        fig, axes = plt.subplots(
+            1,
+            number_of_plots,
+            figsize=(7 * number_of_plots, 4.5),
+            squeeze=False,
+            layout="constrained",
+        )
+        axes = axes[0]
+
+        fixed_horizon = configuration.get(
+            "fixed_horizon"
+        )
+
+        length_configuration = configuration[
+            "length_generator"
+        ]["distribution"]
+
+        length_description = json.dumps(
+            length_configuration,
+            sort_keys=True,
+        )
+
+        plot_discrete_samples(
+            axes[0],
+            sampled_lengths,
+            title=(
+                "Sampled stream lengths\n"
+                f"{length_description}"
+            ),
+            x_label="Sampled length",
+            max_value=fixed_horizon,
+        )
+
+        if fixed_horizon is not None:
+            axes[0].axvline(
+                fixed_horizon,
+                color="tab:red",
+                linestyle="--",
+                label="Fixed horizon",
+            )
+            axes[0].legend()
+
+        if sampled_start_points is not None:
+            start_configuration = configuration[
+                "start_point_generator"
+            ]["distribution"]
+
+            start_description = json.dumps(
+                start_configuration,
+                sort_keys=True,
+            )
+
+            plot_discrete_samples(
+                axes[1],
+                sampled_start_points,
+                title=(
+                    "Effective sampled start points\n"
+                    f"{start_description}"
+                ),
+                x_label="Start point",
+                max_value=fixed_horizon,
+            )
+
+        fig.suptitle(
+            f"Stream-generator sampling distributions\n"
+            f"{amount_of_samples:,} newly generated samples",
+            fontsize=13,
+        )
+
+        distribution_name = length_configuration[
+            "name"
+        ]
+
+        output_path = sampling_directory / safe_file_name(
+            f"generator_{index:02d}_{distribution_name}.png"
+        )
+
+        fig.savefig(output_path, dpi=200)
+        plt.close(fig)
+
+        print(f"Saved {output_path}")
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 def main():
-    OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIRECTORY.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    measurements = load_measurements(RESULTS_DIRECTORY)
+    measurements = load_measurements(
+        RESULTS_DIRECTORY
+    )
 
     if SELECTED_MEASURES is not None:
         measurements = measurements[
-            measurements["measure"].isin(SELECTED_MEASURES)
+            measurements["measure"].isin(
+                SELECTED_MEASURES
+            )
         ].copy()
 
     if measurements.empty:
-        raise ValueError("No measurements match SELECTED_MEASURES.")
+        raise ValueError(
+            "No measurements match SELECTED_MEASURES."
+        )
 
     summary = summarize_repetitions(
         measurements,
@@ -348,6 +698,13 @@ def main():
             output_directory=OUTPUT_DIRECTORY,
             confidence=CONFIDENCE_LEVEL,
         )
+
+    plot_sampling_distributions(
+        results_directory=RESULTS_DIRECTORY,
+        output_directory=OUTPUT_DIRECTORY,
+        amount_of_samples=DISTRIBUTION_SAMPLES,
+        seed=DISTRIBUTION_SEED,
+    )
 
 
 if __name__ == "__main__":

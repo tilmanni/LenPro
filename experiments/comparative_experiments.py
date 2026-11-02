@@ -20,6 +20,7 @@ from lenpro.stream_generation import (
     length_generators,
     stream_generators,
 )
+from lenpro.stream_generation.start_point_generators import CenteredStreamStartPointGenerator
 
 
 ORIGINAL_EVENT = 1
@@ -99,7 +100,8 @@ def make_stream_generator(distribution_name, maximum_length, rng):
         event_generator=event_generators.ConstantEventGenerator(
             ORIGINAL_EVENT
         ),
-        fixed_length=maximum_length,
+        fixed_horizon=maximum_length,
+        start_point_generator=CenteredStreamStartPointGenerator()
     )
 
 

@@ -1,6 +1,4 @@
 from abc import ABC, abstractmethod
-import numpy as np
-from scipy.stats import zipf
 from lenpro.distributions import distributions
 
 class LengthGenerator(ABC):

@@ -34,7 +34,6 @@ class Aggregator:
     def register_global_measure(self, global_measure: GlobalMeasure) -> None:
         self.global_measures.append(global_measure) 
 
-
     def run_simulation(self, input_stream: Stream) -> list[Stream]:
         return [protocol.process_stream(input_stream) for protocol in self.protocols]    
 
@@ -78,21 +77,3 @@ class Aggregator:
                 "global": global_results,
             })
         return results
-
-
-"""
-    # Each run could signify one user, as independent.
-    def get_full_count_distribution(self, input: Stream, runs=100):
-        event_counts = []
-        for protocol in self.protocols:
-            event_counts.append(Counter())
-
-        for _ in range (0, runs):
-            protocol_outputs = self.run_simulation(input=input)
-            amount_of_protocols = len(self.protocols)
-            for i in range(0, amount_of_protocols):
-                # Run local measures
-                number_of_events = sum(x is not None for x in protocol_outputs[i])
-                event_counts[i][number_of_events] += 1
-        return event_counts
-"""
