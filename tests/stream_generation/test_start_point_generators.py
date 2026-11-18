@@ -8,6 +8,7 @@ from lenpro.stream_generation.start_point_generators import (
     CenteredStreamStartPointGenerator,
     DistributionStartPointGenerator,
     StartPointGenerator,
+    ConstantStreamStartPointGenerator,
 )
 
 
@@ -201,3 +202,29 @@ def test_generator_rejects_invalid_arguments(
             fixed_horizon=fixed_horizon,
             length=length,
         )
+
+def test_constant_generator_returns_configured_value():
+    g = ConstantStreamStartPointGenerator(start_point=5)
+    assert g.generate_start_point(fixed_horizon=100, length=10) == 5
+
+def test_constant_generator_zero_start_point():
+    g = ConstantStreamStartPointGenerator(start_point=0)
+    assert g.generate_start_point(fixed_horizon=10, length=3) == 0
+
+def test_constant_generator_to_dict():
+    g = ConstantStreamStartPointGenerator(start_point=7)
+    assert g.to_dict() == {
+        "name": "ConstantStreamStartPointGenerator",
+        "start_point": 7,
+    }
+
+@pytest.mark.parametrize(("fixed_horizon", "length", "error_message"),
+    [
+        (-1, 0, "fixed_horizon must be non-negative"),
+        (10, -1, "length must be non-negative"),
+    ],
+)
+def test_constant_generator_validates_arguments(fixed_horizon, length, error_message):
+    g = ConstantStreamStartPointGenerator(start_point=3)
+    with pytest.raises(ValueError, match=error_message):
+        g.generate_start_point(fixed_horizon=fixed_horizon, length=length)

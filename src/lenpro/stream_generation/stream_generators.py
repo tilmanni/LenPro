@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import List
 import numpy as np
 
-from lenpro.stream_generation import start_point_generators
 from lenpro.stream_generation.event_generators import EventGenerator
 from lenpro.stream_generation.length_generators import LengthGenerator
 from lenpro.stream_generation.start_point_generators import StartPointGenerator
@@ -45,15 +44,16 @@ class StandardStreamGenerator(StreamGenerator):
         if self.fixed_horizon is None:
             for _ in range(length):
                 stream.append(self.event_generator.generate_event())
-        assert self.start_point_generator is not None and self.fixed_horizon is not None 
-        length = min(length, self.fixed_horizon)
-        start_point = self.start_point_generator.generate_start_point(fixed_horizon=self.fixed_horizon, length=length)
-        for _ in range(start_point):
-            stream.append(None)
-        for _ in range(min(self.fixed_horizon, length)):
-            stream.append(self.event_generator.generate_event())
-        for _ in range(max(0, self.fixed_horizon - (start_point + length))):
-            stream.append(None)
+        else:
+            assert self.start_point_generator is not None and self.fixed_horizon is not None 
+            length = min(length, self.fixed_horizon)
+            start_point = self.start_point_generator.generate_start_point(fixed_horizon=self.fixed_horizon, length=length)
+            for _ in range(start_point):
+                stream.append(None)
+            for _ in range(min(self.fixed_horizon, length)):
+                stream.append(self.event_generator.generate_event())
+            for _ in range(max(0, self.fixed_horizon - (start_point + length))):
+                stream.append(None)
             
         return stream 
 

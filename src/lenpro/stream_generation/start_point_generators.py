@@ -66,3 +66,19 @@ class CenteredStreamStartPointGenerator(StartPointGenerator):
         return {
             "name": "CenteredStreamStartPointGenerator",
         }
+
+class ConstantStreamStartPointGenerator(StartPointGenerator):
+
+    def __init__(self, start_point: int = 0):
+        self.start_point = start_point
+
+    def generate_start_point(self, fixed_horizon: int = sys.maxsize, length: int = 0) -> int:
+        validate_arguments(fixed_horizon=fixed_horizon, length=length)
+
+        return self.start_point
+
+    def to_dict(self) -> dict:
+        return {
+            "name": "ConstantStreamStartPointGenerator",
+            "start_point": self.start_point,
+        }

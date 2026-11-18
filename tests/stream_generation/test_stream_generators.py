@@ -111,6 +111,7 @@ def test_stream_equal_to_fixed_length_is_not_padded():
         length=3,
         events=["a", "b", "c"],
         fixed_horizon=3,
+        start_point_generator=CenteredStreamStartPointGenerator()
     )
 
     stream = generator.generate_stream()
@@ -174,6 +175,7 @@ def test_to_dict():
         length_generator=length_generator,
         event_generator=event_generator,
         fixed_horizon=10,
+        start_point_generator=CenteredStreamStartPointGenerator()
     )
 
     assert generator.to_dict() == {
@@ -185,7 +187,9 @@ def test_to_dict():
             "name": "ExampleEventGenerator",
         },
         "fixed_horizon": 10,
-        "start_point_generator": None,
+        "start_point_generator": {
+            'name': 'CenteredStreamStartPointGenerator',
+        },
     }
 
     length_generator.to_dict.assert_called_once_with()
