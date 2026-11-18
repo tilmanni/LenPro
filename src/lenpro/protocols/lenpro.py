@@ -25,8 +25,8 @@ class LenPro(ldp_protocol.LDPProtocol):
         self.p = float(-np.expm1(-epsilon / delta_length))
         self.perturbing_mechanism = perturbing_mechanism
         self.synthetic_event_generator = synthetic_event_generator
-        self.length_estimator = LenProCountEstimator()
-        self.prefix_length_estimator = LenProCountEstimator()
+        self.count_estimator = LenProCountEstimator()
+        self.prefix_count_estimator = LenProCountEstimator()
         self._reset_connection()
 
     def _reset_connection(self) -> None:

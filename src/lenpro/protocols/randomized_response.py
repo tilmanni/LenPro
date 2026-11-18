@@ -37,8 +37,8 @@ class RandomizedResponse(ldp_protocol.LDPProtocol):
         self.q = exp_negative / (1.0 + exp_negative)
         self.perturbing_mechanism = perturbing_mechanism
         self.synthetic_event_generator = synthetic_event_generator
-        self.length_estimator = RandomizedResponseCountEstimator(self)
-        self.prefix_length_estimator = RandomizedResponseCountEstimator(self)
+        self.count_estimator = RandomizedResponseCountEstimator(self)
+        self.prefix_count_estimator = RandomizedResponseCountEstimator(self)
 
     def process_event(self, event):
         if event is not None:
