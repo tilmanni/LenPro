@@ -1,6 +1,10 @@
 from unittest.mock import Mock
 
 import pytest
+from itertools import zip_longest
+from types import SimpleNamespace
+
+from lenpro.protocols.ldp_protocol import LDPProtocol
 
 from lenpro.measures.global_measures import (
     EmptyOutputProbabilityMeasure,
@@ -8,9 +12,15 @@ from lenpro.measures.global_measures import (
     GlobalFractionSyntheticEventsMeasure,
     GlobalMeasure,
     LengthUnchangedProbabilityMeasure,
+    MeanRelativeErrorFrequencyMeasure,
     count_events,
 )
 
+from lenpro.statistics.statistics import (
+    Statistic,
+    CountStatistic,
+    EstimatorStatistic,
+)
 
 def test_global_measure_cannot_be_instantiated():
     with pytest.raises(TypeError):
@@ -270,3 +280,95 @@ def test_global_fraction_synthetic_to_dict():
     assert measure.to_dict() == {
         "name": "GlobalFractionSyntheticEventsMeasure",
     }
+
+def make_count_statistic():
+# Counts non-None in a column
+    return CountStatistic()
+
+def test_mean_relative_error_frequency_basic():
+    # Two columns: col1 original has 2 events; col2 original has 1 event
+    original = [
+        ["a", "b"],
+        ["x", None], 
+    ]
+    perturbed = [
+        ["a", None],
+        [None, None],
+    ]
+    measure = MeanRelativeErrorFrequencyMeasure(
+        statistic=make_count_statistic(),
+        estimator_name=None,
+        sanity_bound=1,
+    )
+    result = measure.process_dataset(original, perturbed, protocol=None) 
+    assert result == pytest.approx(0.75)
+
+def test_mean_relative_error_frequency_handles_padding_with_zip_longest():
+    # Different row lengths; padding with None should not inflate counts.
+    original = [
+        ["a", None, "b"], # length 3
+        ["x"], # length 1
+    ]
+    perturbed = [
+        [None, "p"], # length 2
+        [None, None, "q"], # length 3
+    ]
+    # Columns (zipped longest):
+    # c1: ("a","x") -> orig 2, pert 0
+    # c2: (None,None) -> orig 0, pert 1
+    # c3: ("b",None) -> orig 1, pert 1
+    # REs (sanity_bound=1):
+    # c1: |2-0|/max(2,1)=1
+    # c2: |0-1|/max(0,1)=1
+    # c3: |1-1|/max(1,1)=0
+    # mean = (1+1+0)/3 = 2/3
+    measure = MeanRelativeErrorFrequencyMeasure(
+        statistic=make_count_statistic(),
+        estimator_name=None,
+        sanity_bound=1,
+    )
+    result = measure.process_dataset(original, perturbed, protocol=None)
+    assert result == pytest.approx(2/3)
+
+def test_mean_relative_error_frequency_uses_estimator_when_name_and_protocol_given(monkeypatch):
+    # Use a dummy protocol with an estimator attribute; validate_estimator returns it.
+    class DummyEstimator:
+        def estimate(self, data):
+            # returns number of non-None, same as CountStatistic, but exercise estimator path
+            return sum(x is not None for x in data)
+        def to_dict(self):
+            return {"name": "DummyEstimator"}
+    protocol = Mock(spec=LDPProtocol) 
+    protocol.length_estimator = DummyEstimator()
+    # Patch validate_estimator import used in measure to return our estimator 
+    import lenpro.measures.global_measures as gm 
+    monkeypatch.setattr( gm, "validate_estimator", lambda estimator_name, protocol: getattr(protocol, estimator_name), ) 
+    original = [ ["a", "b"], ["x", None], ] 
+    perturbed = [ ["a", None], [None, None], ] 
+    measure = MeanRelativeErrorFrequencyMeasure(statistic=make_count_statistic(), estimator_name="length_estimator", sanity_bound=1) 
+    result = measure.process_dataset(original, perturbed, protocol=protocol) # Same scenario as basic test → 0.75 
+    assert result == pytest.approx(0.75)
+
+def test_mean_relative_error_frequency_rejects_non_positive_sanity_bound():
+    with pytest.raises(ValueError, match="sanity_bound must be greater than zero"):
+        MeanRelativeErrorFrequencyMeasure(
+            statistic=make_count_statistic(),
+            estimator_name=None,
+            sanity_bound=0,
+        )
+
+def test_to_dict_includes_statistic_and_params():
+    stat = make_count_statistic()
+    measure = MeanRelativeErrorFrequencyMeasure(
+        statistic=stat,
+        estimator_name="length_estimator",
+        sanity_bound=2.0,
+    )
+    assert measure.to_dict() == { 
+        "name": "MeanRelativeErrorFrequencyMeasure", 
+        "statistic": {
+            "name": "Count"
+            }, 
+        "estimator_name": "length_estimator", 
+        "sanity_bound": 2.0, 
+        }

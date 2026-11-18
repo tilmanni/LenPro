@@ -66,7 +66,7 @@ class Aggregator:
             for global_measure in self.global_measures:
                 global_results.append({
                     "measure": global_measure.to_dict(),
-                    "value": global_measure.process_dataset(original_dataset=input_streams, perturbed_dataset=protocol_outputs),
+                    "value": global_measure.process_dataset(original_dataset=input_streams, perturbed_dataset=protocol_outputs, protocol=protocol),
                 })
 
             results.append({

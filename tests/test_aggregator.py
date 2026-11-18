@@ -194,6 +194,7 @@ def test_measure_run():
             ["perturbed-1", None],
             ["perturbed-2"],
         ],
+        protocol=protocol
     )
 
 def test_every_aggregate_measure_is_applied_to_every_entry_measure():

@@ -1,6 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import Any
 from collections.abc import Callable, Sequence
+from itertools import zip_longest
+import numpy as np
+from lenpro.protocols.ldp_protocol import LDPProtocol
+
+
+from lenpro.statistics.statistics import Statistic, EstimatorStatistic
+from lenpro.measures.entry_level_measures import validate_estimator
 
 
 
@@ -12,6 +19,9 @@ Predicate = Callable[[Any], bool]
 def count_events(data: Data) -> int:
     return sum(event is not None for event in data)
 
+def relative_error(original_value: float, perturbed_value: float, sanity_bound: float) -> float:
+    return abs(original_value - perturbed_value) / max(abs(original_value), sanity_bound)
+
 def validate_dataset(original_dataset: Dataset, perturbed_dataset: Dataset) -> None:
     if (len(original_dataset) != len(perturbed_dataset)):
         raise ValueError("original_dataset and perturbed_dataset must have the same length")
@@ -20,7 +30,7 @@ def validate_dataset(original_dataset: Dataset, perturbed_dataset: Dataset) -> N
 class GlobalMeasure(ABC):
 
     @abstractmethod
-    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset) -> float:
+    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset, protocol: LDPProtocol | None = None) -> float:
         pass
 
     @abstractmethod
@@ -30,7 +40,7 @@ class GlobalMeasure(ABC):
 
 class EmptyOutputProbabilityMeasure(GlobalMeasure):
 
-    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset) -> float:
+    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset, protocol: LDPProtocol | None = None) -> float:
 
         validate_dataset(original_dataset=original_dataset, perturbed_dataset=perturbed_dataset)
         dataset_size = len(original_dataset)
@@ -46,7 +56,7 @@ class EmptyOutputProbabilityMeasure(GlobalMeasure):
 
 class LengthUnchangedProbabilityMeasure(GlobalMeasure):
 
-    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset) -> float:
+    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset, protocol: LDPProtocol | None = None) -> float:
         validate_dataset(original_dataset=original_dataset, perturbed_dataset=perturbed_dataset)
         dataset_size = len(original_dataset)
         if dataset_size == 0:
@@ -65,7 +75,7 @@ class GlobalFractionRetainedEventsMeasure(GlobalMeasure):
     def __init__(self, is_original: Predicate) -> None:
         self.is_original = is_original
 
-    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset) -> float:
+    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset, protocol: LDPProtocol | None = None) -> float:
         validate_dataset(original_dataset=original_dataset, perturbed_dataset=perturbed_dataset)
         total_number_of_original_events = 0
         total_number_of_retained_original_events = 0
@@ -88,7 +98,7 @@ class GlobalFractionSyntheticEventsMeasure(GlobalMeasure):
     def __init__(self, is_synthetic: Predicate) -> None:
         self.is_synthetic = is_synthetic
 
-    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset) -> float:
+    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset, protocol: LDPProtocol | None = None) -> float:
         validate_dataset(original_dataset=original_dataset, perturbed_dataset=perturbed_dataset)
         total_number_of_perturbed_events = 0
         total_number_of_synthetic_events = 0
@@ -102,4 +112,42 @@ class GlobalFractionSyntheticEventsMeasure(GlobalMeasure):
     def to_dict(self) -> dict:
         return {
             "name": "GlobalFractionSyntheticEventsMeasure",
+        }
+
+class MeanRelativeErrorFrequencyMeasure(GlobalMeasure):
+    def __init__(self, statistic: Statistic, estimator_name: str | None = None, sanity_bound: float = 1) -> None:
+        if sanity_bound <= 0:
+            raise ValueError("sanity_bound must be greater than zero")
+        self.estimator_name = estimator_name
+        self.statistic = statistic
+        self.sanity_bound = sanity_bound
+
+    def process_dataset(self, original_dataset: Dataset, perturbed_dataset: Dataset, protocol: LDPProtocol | None = None) -> float:
+        if self.estimator_name is not None and protocol is not None:
+            perturbed_data_statistic = EstimatorStatistic(estimator=validate_estimator(estimator_name=self.estimator_name, protocol=protocol))
+        else: 
+            perturbed_data_statistic = self.statistic
+        
+        validate_dataset(original_dataset=original_dataset, perturbed_dataset=perturbed_dataset)
+        original_values = []
+        for column in zip_longest(*original_dataset, fillvalue=None):
+            original_values.append(self.statistic.evaluate(data=column))
+
+        perturbed_values = []
+        for column in zip_longest(*perturbed_dataset, fillvalue=None):
+            perturbed_values.append(perturbed_data_statistic.evaluate(data=column))
+        assert len(original_values) == len(perturbed_values)
+        return np.mean(
+            [relative_error(original_value=original_value, 
+                            perturbed_value=perturbed_value, 
+                            sanity_bound=self.sanity_bound) 
+            for original_value, perturbed_value in zip(original_values, perturbed_values)]
+            )
+
+    def to_dict(self) -> dict:
+        return {
+            "name": "MeanRelativeErrorFrequencyMeasure",
+            "statistic": self.statistic.to_dict(),
+            "estimator_name": self.estimator_name,
+            "sanity_bound": self.sanity_bound,
         }
