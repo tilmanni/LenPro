@@ -6,18 +6,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import t
 
-import re
-
-from lenpro.distributions.distributions import (
-    GaussianDistribution,
-    UniformDistribution,
-    ZipfDistribution,
-)
-from lenpro.stream_generation.length_generators import (
-    DistributionLengthGenerator,
-)
-from lenpro.stream_generation.start_point_generators import (
-    DistributionStartPointGenerator,
+from visualize_distribution import plot_sampling_distributions
+from lenpro.analysis.analytical_bounds import (
+    calculate_analytical_result,
 )
 
 
@@ -26,10 +17,14 @@ from lenpro.stream_generation.start_point_generators import (
 # ---------------------------------------------------------------------------
 
 # insert run directory for run here. 
-RUN_DIRECTORY = Path("20261102T121149056624Z")
+RUN_DIRECTORY = Path("20261111T131640010018Z")
 RESULTS_DIRECTORY = Path("results") / RUN_DIRECTORY
 OUTPUT_DIRECTORY = Path("plots/comparisons") / RUN_DIRECTORY
 CONFIDENCE_LEVEL = 0.95
+
+# Implement distribution selection here i.e. 
+# DISTRIBUTIONS
+# have to include desired parameters here already 
 DISTRIBUTION_SAMPLES = 10_000
 DISTRIBUTION_SEED = 42
 
@@ -40,7 +35,7 @@ SELECTED_MEASURES = None
 MEASURE_LABELS = {
     "RelativeErrorMeasure": "Mean relative error length",
     "RelativeErrorMeasureProtocolDependent": "Mean relative error length estimator",
-    "PrefixMeanRelativeErrorMeasureProtocolDependent": "Mean relative error of prefix length estimatior",
+    "PrefixMeanRelativeErrorMeasureProtocolDependent": "Mean relative error of prefix length estimator",
     "FractionRetainedEventsMeasure": "Mean fraction of retained events",
     "FractionSyntheticEventsMeasure": "Mean fraction of synthetic events",
     "EmptyOutputProbabilityMeasure": "Empty output probability",
@@ -84,6 +79,10 @@ def load_measurements(directory):
                 "source_file": file_path.name,
                 "repetition": experiment["repetition"],
                 "protocol": protocol["name"],
+                "protocol_config": json.dumps(
+                    protocol,
+                    sort_keys=True,
+                ),
                 "epsilon": protocol["epsilon"],
                 "delta_length": protocol["delta_length"],
                 "data_set_size": run["data_set_size"],
@@ -133,6 +132,8 @@ def load_measurements(directory):
         raise ValueError("Some measurement values are missing or non-finite.")
 
     observation_key = [
+        "stream_generator_config",
+        "protocol_config",
         "distribution_config",
         "data_set_size",
         "fixed_horizon",
@@ -157,15 +158,17 @@ def load_measurements(directory):
 # Summarizing
 # ---------------------------------------------------------------------------
 
-def summarize_repetitions(df, confidence):
+def summarize_repetitions(df, confidence) -> pd.DataFrame:
     """Mean and pointwise Student's t interval across repetitions."""
     group_columns = [
         "distribution",
         "distribution_config",
+        "stream_generator_config",
         "data_set_size",
         "fixed_horizon",
         "delta_length",
         "protocol",
+        "protocol_config",
         "epsilon",
         "level",
         "measure",
@@ -221,12 +224,22 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
     epsilons = sorted(selected["epsilon"].unique())
     label = MEASURE_LABELS.get(measure, measure)
 
-    # Shared limits make the separate distribution figures comparable.
-    bounds = np.concatenate([
+    bound_arrays = [
         selected["mean"].to_numpy(),
         selected["ci_low"].dropna().to_numpy(),
         selected["ci_high"].dropna().to_numpy(),
-    ])
+        selected["analytical_value"].dropna().to_numpy(),
+        selected["analytical_lower"].dropna().to_numpy(),
+        selected["analytical_upper"].dropna().to_numpy(),
+    ]
+
+    bound_arrays = [
+        values
+        for values in bound_arrays
+        if len(values) > 0
+    ]
+
+    bounds = np.concatenate(bound_arrays)
 
     lower, upper = bounds.min(), bounds.max()
     padding = 0.05 * (upper - lower) if upper > lower else 0.05
@@ -273,6 +286,7 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
                         label=protocol,
                     )
                     legend_entries[protocol] = line
+                    #legend_entries[f"{protocol} empirical"] = line
 
                     intervals = series.dropna(subset=["ci_low", "ci_high"])
                     if not intervals.empty:
@@ -283,6 +297,60 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
                             color=line.get_color(),
                             alpha=0.18,
                         )
+
+                    analytical_values = series.dropna(
+                        subset=["analytical_value"]
+                    )
+
+                    if not analytical_values.empty:
+                        analytical_line, = ax.plot(
+                            analytical_values["epsilon"].to_numpy(),
+                            analytical_values["analytical_value"].to_numpy(),
+                            color=line.get_color(),
+                            linestyle="--",
+                            linewidth=2,
+                            label=f"{protocol} analytical",
+                        )
+
+                        legend_entries[
+                            f"{protocol} analytical"
+                        ] = analytical_line
+                    
+                    analytical_lower = series.dropna(
+                        subset=["analytical_lower"]
+                    )
+
+                    if not analytical_lower.empty:
+                        lower_line, = ax.plot(
+                            analytical_lower["epsilon"].to_numpy(),
+                            analytical_lower["analytical_lower"].to_numpy(),
+                            color=line.get_color(),
+                            linestyle=":",
+                            linewidth=2,
+                            label=f"{protocol} lower bound",
+                        )
+
+                        legend_entries[
+                            f"{protocol} lower bound"
+                        ] = lower_line
+
+                    analytical_upper = series.dropna(
+                        subset=["analytical_upper"]
+                    )
+
+                    if not analytical_upper.empty:
+                        upper_line, = ax.plot(
+                            analytical_upper["epsilon"].to_numpy(),
+                            analytical_upper["analytical_upper"].to_numpy(),
+                            color=line.get_color(),
+                            linestyle="-.",
+                            linewidth=2,
+                            label=f"{protocol} upper bound",
+                        )
+
+                        legend_entries[
+                            f"{protocol} upper bound"
+                        ] = upper_line
 
                 ax.set_title(f"N={size:,}, horizon={horizon}")
                 ax.set_xticks(epsilons)
@@ -329,324 +397,42 @@ def plot_comparison(summary, measure, level, output_directory, confidence):
 
 
 
-def distribution_from_dict(
-    configuration: dict,
-    rng: np.random.Generator,
-):
-    """Reconstruct a distribution from its serialized configuration."""
-    name = configuration["name"]
 
-    if name == "UniformDistribution":
-        return UniformDistribution(
-            low=configuration["low"],
-            high=configuration["high"],
-            rng=rng,
+def add_analytical_results(summary: pd.DataFrame) -> pd.DataFrame:
+    summary = summary.copy()
+
+    analytical_values = []
+    analytical_lowers = []
+    analytical_uppers = []
+
+    for row in summary.itertuples(index=False):
+        protocol_configuration = json.loads(
+            row.protocol_config
+        )
+        generator_configuration = json.loads(
+            row.stream_generator_config
         )
 
-    if name == "GaussianDistribution":
-        return GaussianDistribution(
-            mean=configuration["mean"],
-            scale=configuration["scale"],
-            rng=rng,
+        distribution_configuration = json.loads(
+            row.distribution_config
         )
 
-    if name == "ZipfDistribution":
-        return ZipfDistribution(
-            a=configuration["a"],
-            rng=rng,
+        result = calculate_analytical_result(
+            protocol=protocol_configuration,
+            stream_generator=generator_configuration,
+            distribution=distribution_configuration,
+            measure_name=row.measure,
         )
 
-    raise ValueError(f"Unsupported distribution: {name!r}")
+        analytical_values.append(result.value)
+        analytical_lowers.append(result.lower)
+        analytical_uppers.append(result.upper)
 
-def plot_discrete_samples(
-    ax: plt.Axes,
-    samples,
-    *,
-    title: str,
-    x_label: str,
-    max_value: int | None = None,
-) -> None:
-    samples = np.asarray(samples, dtype=int)
-    total_samples = len(samples)
+    summary["analytical_value"] = analytical_values
+    summary["analytical_lower"] = analytical_lowers
+    summary["analytical_upper"] = analytical_uppers
 
-    cut_off = 0
-
-    if max_value is not None:
-        cut_off = int(np.sum(samples > max_value))
-        visible_samples = samples[samples <= max_value]
-    else:
-        visible_samples = samples
-
-    if visible_samples.size == 0:
-        ax.text(
-            0.5,
-            0.5,
-            "No samples in displayed range",
-            transform=ax.transAxes,
-            ha="center",
-            va="center",
-        )
-    else:
-        values, counts = np.unique(
-            visible_samples,
-            return_counts=True,
-        )
-
-        ax.bar(
-            values,
-            counts / total_samples,
-            width=0.9,
-            edgecolor="black",
-        )
-
-    if cut_off:
-        title += (
-            f"\n{cut_off} samples greater than "
-            f"{max_value} not shown"
-        )
-
-    ax.set_title(title)
-    ax.set_xlabel(x_label)
-    ax.set_ylabel("Relative frequency")
-    ax.grid(axis="y", alpha=0.3)
-
-def sample_stream_generator_configuration(
-    generator_configuration: dict,
-    amount_of_samples: int,
-    seed: int,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
-    """
-    Resample lengths and start points from a serialized stream-generator
-    configuration.
-
-    These are new samples and are not necessarily the samples used in the
-    original experiment.
-    """
-    seed_sequence = np.random.SeedSequence(seed)
-    length_seed, start_seed = seed_sequence.spawn(2)
-
-    length_configuration = generator_configuration.get(
-        "length_generator"
-    )
-
-    if (
-        length_configuration is None
-        or length_configuration.get("name")
-        != "DistributionLengthGenerator"
-    ):
-        return None, None
-
-    length_distribution_configuration = (
-        length_configuration["distribution"]
-    )
-
-    length_distribution = distribution_from_dict(
-        length_distribution_configuration,
-        np.random.default_rng(length_seed),
-    )
-
-    length_generator = DistributionLengthGenerator(
-        length_distribution
-    )
-
-    sampled_lengths = np.array(
-        [
-            length_generator.generate_length()
-            for _ in range(amount_of_samples)
-        ],
-        dtype=int,
-    )
-
-    start_configuration = generator_configuration.get(
-        "start_point_generator"
-    )
-    fixed_horizon = generator_configuration.get(
-        "fixed_horizon"
-    )
-
-    if (
-        start_configuration is None
-        or start_configuration.get("name")
-        != "DistributionStartPointGenerator"
-        or fixed_horizon is None
-    ):
-        return sampled_lengths, None
-
-    start_distribution = distribution_from_dict(
-        start_configuration["distribution"],
-        np.random.default_rng(start_seed),
-    )
-
-    start_generator = DistributionStartPointGenerator(
-        start_distribution
-    )
-
-    # This mirrors StandardStreamGenerator: lengths exceeding the horizon
-    # are restricted to the horizon before generating a start point.
-    effective_lengths = np.minimum(
-        sampled_lengths,
-        fixed_horizon,
-    )
-
-    sampled_start_points = np.array(
-        [
-            start_generator.generate_start_point(
-                fixed_horizon=fixed_horizon,
-                length=int(length),
-            )
-            for length in effective_lengths
-        ],
-        dtype=int,
-    )
-
-    return sampled_lengths, sampled_start_points
-
-def safe_file_name(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
-
-
-def plot_sampling_distributions(
-    results_directory: Path,
-    output_directory: Path,
-    *,
-    amount_of_samples: int = 10_000,
-    seed: int = 42,
-) -> None:
-    """
-    Plot each unique distribution-based length/start-point configuration
-    found in the result files.
-    """
-    configurations: dict[str, dict] = {}
-
-    for file_path in sorted(results_directory.glob("*.json")):
-        with file_path.open("r", encoding="utf-8") as file:
-            run = json.load(file)
-
-        generator_configuration = run.get(
-            "stream_generator"
-        )
-
-        if generator_configuration is None:
-            continue
-
-        key = json.dumps(
-            generator_configuration,
-            sort_keys=True,
-        )
-
-        configurations.setdefault(
-            key,
-            generator_configuration,
-        )
-
-    sampling_directory = (
-        output_directory / "sampling_distributions"
-    )
-    sampling_directory.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    for index, configuration in enumerate(
-        configurations.values(),
-        start=1,
-    ):
-        sampled_lengths, sampled_start_points = (
-            sample_stream_generator_configuration(
-                configuration,
-                amount_of_samples=amount_of_samples,
-                seed=seed + index,
-            )
-        )
-
-        if sampled_lengths is None:
-            continue
-
-        number_of_plots = (
-            2 if sampled_start_points is not None else 1
-        )
-
-        fig, axes = plt.subplots(
-            1,
-            number_of_plots,
-            figsize=(7 * number_of_plots, 4.5),
-            squeeze=False,
-            layout="constrained",
-        )
-        axes = axes[0]
-
-        fixed_horizon = configuration.get(
-            "fixed_horizon"
-        )
-
-        length_configuration = configuration[
-            "length_generator"
-        ]["distribution"]
-
-        length_description = json.dumps(
-            length_configuration,
-            sort_keys=True,
-        )
-
-        plot_discrete_samples(
-            axes[0],
-            sampled_lengths,
-            title=(
-                "Sampled stream lengths\n"
-                f"{length_description}"
-            ),
-            x_label="Sampled length",
-            max_value=fixed_horizon,
-        )
-
-        if fixed_horizon is not None:
-            axes[0].axvline(
-                fixed_horizon,
-                color="tab:red",
-                linestyle="--",
-                label="Fixed horizon",
-            )
-            axes[0].legend()
-
-        if sampled_start_points is not None:
-            start_configuration = configuration[
-                "start_point_generator"
-            ]["distribution"]
-
-            start_description = json.dumps(
-                start_configuration,
-                sort_keys=True,
-            )
-
-            plot_discrete_samples(
-                axes[1],
-                sampled_start_points,
-                title=(
-                    "Effective sampled start points\n"
-                    f"{start_description}"
-                ),
-                x_label="Start point",
-                max_value=fixed_horizon,
-            )
-
-        fig.suptitle(
-            f"Stream-generator sampling distributions\n"
-            f"{amount_of_samples:,} newly generated samples",
-            fontsize=13,
-        )
-
-        distribution_name = length_configuration[
-            "name"
-        ]
-
-        output_path = sampling_directory / safe_file_name(
-            f"generator_{index:02d}_{distribution_name}.png"
-        )
-
-        fig.savefig(output_path, dpi=200)
-        plt.close(fig)
-
-        print(f"Saved {output_path}")
+    return summary
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -678,6 +464,8 @@ def main():
         measurements,
         confidence=CONFIDENCE_LEVEL,
     )
+
+    summary = add_analytical_results(summary)
 
     summary.to_csv(
         OUTPUT_DIRECTORY / "comparison_summary.csv",

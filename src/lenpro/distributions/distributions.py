@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 import numpy as np
+from scipy.stats import norm, zipf, uniform
+from typing import Callable, Mapping, Any
+
 
 class Distribution(ABC):
 
@@ -9,6 +12,10 @@ class Distribution(ABC):
 
     @abstractmethod
     def to_dict(self) -> dict:
+        pass
+
+    @abstractmethod
+    def pmf(self, x: int) -> float:
         pass
 
 class UniformDistribution(Distribution):
@@ -28,6 +35,12 @@ class UniformDistribution(Distribution):
             "low": self.low,
         }
 
+    def pmf(self, x: int) -> float:
+        if x >= self.low and x < self.high:
+            return float(1 / (self.high - self.low))
+        return 0.0
+
+
 class GaussianDistribution(Distribution):
 
     def __init__(self, mean, scale, rng: np.random.Generator | None = None,) -> None:
@@ -45,6 +58,11 @@ class GaussianDistribution(Distribution):
             "scale": self.scale,
         }
 
+    def pmf(self, x: int) -> float:
+        # PMF of rounded normal distribution
+        return float(norm.cdf(x = x  + 0.5, loc=self.mean, scale=self.scale) - norm.cdf(x = x  - 0.5, loc=self.mean, scale=self.scale))
+        #return float(norm.pdf(x=x, loc=self.mean, scale=self.scale))
+
 class ZipfDistribution(Distribution):
 
     def __init__(self, a, rng: np.random.Generator | None = None,) -> None:
@@ -59,3 +77,18 @@ class ZipfDistribution(Distribution):
             "name": "ZipfDistribution",
             "a": self.a,
         }
+
+    def pmf(self, x: int) -> float:
+        return float(zipf.pmf(k = x, a=self.a))
+
+
+
+def distribution_from_dict(distribution_config: Mapping[str, Any], rng: np.random.Generator | None = None) -> Distribution:
+    if distribution_config["name"] == "UniformDistribution":
+        return UniformDistribution(low=distribution_config["low"] , high=distribution_config["high"], rng=rng)
+    elif distribution_config["name"] == "GaussianDistribution":
+        return GaussianDistribution(mean=distribution_config["mean"], scale=distribution_config["scale"], rng=rng)
+    elif distribution_config["name"] == "ZipfDistribution":
+        return ZipfDistribution(a=distribution_config["a"], rng=rng)
+    else:
+        raise ValueError(f"Unknown distribution: {distribution_config["name"]}")
