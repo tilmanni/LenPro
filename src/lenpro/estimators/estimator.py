@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import Any
+from collections.abc import Sequence
 
+Data = Sequence[Any]
 
 class Estimator(ABC):
 
     @abstractmethod
-    def estimate(self, stream) -> float:
+    def estimate(self, data: Data) -> float:
         pass
 
     @abstractmethod

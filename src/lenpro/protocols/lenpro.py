@@ -5,7 +5,7 @@ from typing import Any
 from lenpro.protocols import ldp_protocol
 from lenpro.mechanisms import mechanisms
 from lenpro.stream_generation import event_generators
-from lenpro.estimators.lenpro_estimators import LenProLengthEstimator, LenProPrefixLengthMedianEstimator
+from lenpro.estimators.lenpro_estimators import LenProCountEstimator, LenProPrefixLengthMedianEstimator
 
 Stream = Sequence[Any]
 
@@ -15,24 +15,18 @@ class LenPro(ldp_protocol.LDPProtocol):
     def __init__(self, epsilon, delta_length, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, rng: np.random.Generator | None = None,) -> None:
         super().__init__(epsilon=epsilon)
         if epsilon == 0:
-            raise ValueError(
-                "epsilon must be greater than zero for LenPro"
-            )
+            raise ValueError("epsilon must be greater than zero for LenPro")
         if not np.isfinite(delta_length):
             raise ValueError("delta_length must be finite")
-
         if delta_length <= 0:
-            raise ValueError(
-                "delta_length must be greater than zero"
-            )
+            raise ValueError("delta_length must be greater than zero")
         self.rng = rng if rng is not None else np.random.default_rng()
         self.delta_length = delta_length
         self.p = float(-np.expm1(-epsilon / delta_length))
-        #self.p = (1 - np.pow(np.e, (-epsilon / delta_length)))
         self.perturbing_mechanism = perturbing_mechanism
         self.synthetic_event_generator = synthetic_event_generator
-        self.length_estimator = LenProLengthEstimator()
-        self.prefix_length_estimator = LenProLengthEstimator()
+        self.length_estimator = LenProCountEstimator()
+        self.prefix_length_estimator = LenProCountEstimator()
         self._reset_connection()
 
     def _reset_connection(self) -> None:
@@ -60,7 +54,9 @@ class LenPro(ldp_protocol.LDPProtocol):
     def _last_returned_event(self) -> Any:
         return next((event for event in reversed(self.returned_events) if event is not None), None)
 
-
+    # Right now, suppress first r events, and start generating values after 
+    # connection is over. This is slightly wrong. Have to further suppress events even if no connection present, 
+    # only start generating events afterwards. 
     def process_event(self, event):
         if event is not None: # New connection
             if not self.connected:
@@ -77,6 +73,11 @@ class LenPro(ldp_protocol.LDPProtocol):
 
         # event is None 
         if not self.connected:
+            return None
+        assert self.r is not None 
+        # Makes sure the first r events are always suppressed?
+        if len(self.returned_events) < self.r:
+            self.returned_events.append(None)
             return None 
         adjusted_length = self._adjusted_length()
         # Check if fake event generation still necessary
@@ -93,6 +94,7 @@ class LenPro(ldp_protocol.LDPProtocol):
 
         # Generate trailing synthetic events until 
         # adjusted output length is reached
+        # Not just synthetic events, also remove events if r not full
         while (self.connected and self.k < self._adjusted_length()):
             processed_stream.append(self.process_event(None))
         # Reset connection so that another stream can be safely processed

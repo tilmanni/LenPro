@@ -350,7 +350,7 @@ def test_process_stream_adds_synthetic_events():
 def test_synthetic_events_are_generated_even_when_all_originals_suppressed():
     protocol, mechanism, event_generator, _ = make_protocol(
         a=3,
-        r=2,
+        r=3,
     )
 
     event_generator.generate_event.side_effect = [
@@ -358,6 +358,8 @@ def test_synthetic_events_are_generated_even_when_all_originals_suppressed():
         "synthetic-2",
     ]
 
+    # Wrong, always have to suppress r values, i.e. 
+    # None, None, synthetic-1, synthetic-2.
     # Adjusted length = 1 - 2 + 3 = 2.
     # The original event is suppressed, but two synthetic
     # events must still be generated.
@@ -365,15 +367,15 @@ def test_synthetic_events_are_generated_even_when_all_originals_suppressed():
 
     assert result == [
         None,
+        None,
+        None,
         "synthetic-1",
-        "synthetic-2",
     ]
 
     mechanism.perturb_event.assert_not_called()
 
     assert event_generator.generate_event.call_args_list == [
         call(previous_event=None),
-        call(previous_event="synthetic-1"),
     ]
 
 
