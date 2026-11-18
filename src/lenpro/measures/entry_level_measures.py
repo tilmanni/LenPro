@@ -6,7 +6,7 @@ import numpy as np
 
 from lenpro.protocols.ldp_protocol import LDPProtocol
 from lenpro.estimators.estimator import Estimator
-
+from lenpro.statistics.statistics import EstimatorStatistic, Statistic, CountStatistic
 
 # Good practice, should adapt for other modules
 Data = Sequence[Any]
@@ -33,8 +33,6 @@ def validate_estimator(estimator_name: str, protocol: LDPProtocol | None) -> Est
 
 
 class EntryLevelMeasure(ABC):
-    # Default not protocol dependent
-    is_protocol_dependent = False 
 
     @abstractmethod
     def process_data(self, original_data: Data, perturbed_data: Data, protocol: LDPProtocol | None) -> float:
@@ -47,69 +45,70 @@ class EntryLevelMeasure(ABC):
 
 class RelativeErrorMeasure(EntryLevelMeasure):
 
-    # Define Metric?
-    # Default values assigned as if length is metric
-    def __init__(self, sanity_bound: float = 1, metric: Metric | None = None) -> None:
+    def __init__(self, statistic: Statistic | None = None, sanity_bound: float = 1) -> None:
         if sanity_bound <= 0:
             raise ValueError("sanity_bound must be greater than zero")
-        
-        self.metric = metric if metric is not None else count_events
+        self.statistic = statistic if statistic is not None else CountStatistic()
         self.sanity_bound = sanity_bound
 
     def process_data(self, original_data: Data, perturbed_data: Data, protocol: LDPProtocol | None = None) -> float:
-        original_value = self.metric(original_data)
-        perturbed_value = self.metric(perturbed_data)
+        original_value = self.statistic.evaluate(data=original_data)
+        perturbed_value = self.statistic.evaluate(data=perturbed_data)
         return relative_error(original_value=original_value, perturbed_value=perturbed_value, sanity_bound=self.sanity_bound)
     
     def to_dict(self) -> dict:
-        #return f"Relative Error(sanity bound = '{self.sanity_bound}', metric = '{self.metric}')"
-        # Have to implement to_dict() for metric for above return value.
         return {
             "name": "RelativeErrorMeasure",
+            "statistic": self.statistic.to_dict(),
             "sanity_bound": self.sanity_bound,
         }
 
 class RelativeErrorMeasureProtocolDependent(EntryLevelMeasure):
 
-    is_protocol_dependent = True
-
-    def __init__(self, estimator_name: str, metric: Metric, sanity_bound: float = 1) -> None:
+    # Wrap estimator into statistic?
+    # Could also set estimator to be statistic as default if unset
+    def __init__(self, statistic: Statistic, estimator_name: str | None = None, sanity_bound: float = 1) -> None:
         if sanity_bound <= 0:
             raise ValueError("sanity_bound must be greater than zero")
         self.estimator_name = estimator_name
-        self.metric = metric
+        self.statistic = statistic
         self.sanity_bound = sanity_bound
 
     def process_data(self, original_data: Data, perturbed_data: Data, protocol: LDPProtocol | None = None) -> float:
 
-        estimator = validate_estimator(estimator_name=self.estimator_name, protocol=protocol)
+        if self.estimator_name is not None:
+            perturbed_data_statistic = EstimatorStatistic(estimator=validate_estimator(estimator_name=self.estimator_name, protocol=protocol))
+        else: 
+            perturbed_data_statistic = self.statistic
 
-        original_value = self.metric(original_data)
-        perturbed_value = estimator.estimate(perturbed_data)
+        original_value = self.statistic.evaluate(original_data)
+        perturbed_value = perturbed_data_statistic.evaluate(perturbed_data)
         
         return relative_error(original_value=original_value, perturbed_value=perturbed_value, sanity_bound=self.sanity_bound)
 
     def to_dict(self) -> dict:
         return {
             "name": "RelativeErrorMeasureProtocolDependent",
+            "statistic": self.statistic.to_dict(),
             "estimator_name": self.estimator_name,
             "sanity_bound": self.sanity_bound,
         }
 
 class PrefixMeanRelativeErrorMeasureProtocolDependent(EntryLevelMeasure):
 
-    is_protocol_dependent = True 
-
-    def __init__(self, estimator_name: str, metric: Metric, sanity_bound: float = 1) -> None:
+    def __init__(self, statistic: Statistic, estimator_name: str | None = None, sanity_bound: float = 1) -> None:
         if sanity_bound <= 0:
             raise ValueError("sanity_bound must be greater than zero")
         self.estimator_name = estimator_name
-        self.metric = metric
+        self.statistic = statistic
         self.sanity_bound = sanity_bound
 
     def process_data(self, original_data: Data, perturbed_data: Data, protocol: LDPProtocol | None = None) -> float:
 
-        estimator = validate_estimator(estimator_name=self.estimator_name, protocol=protocol)
+        if self.estimator_name is not None:
+            perturbed_data_statistic = EstimatorStatistic(estimator=validate_estimator(estimator_name=self.estimator_name, protocol=protocol))
+        else: 
+            perturbed_data_statistic = self.statistic
 
         max_len = max(len(original_data), len(perturbed_data))
     
@@ -118,14 +117,15 @@ class PrefixMeanRelativeErrorMeasureProtocolDependent(EntryLevelMeasure):
 
 
         return np.mean([relative_error(
-            original_value=self.metric(original_data[:i]),
-            perturbed_value=estimator.estimate(perturbed_data[:i]),
+            original_value=self.statistic.evaluate(original_data[:i]),
+            perturbed_value=perturbed_data_statistic.evaluate(perturbed_data[:i]),
             sanity_bound=self.sanity_bound
             ) for i in range(1, len(original_data) + 1)])
 
     def to_dict(self) -> dict:
         return {
             "name": "PrefixMeanRelativeErrorMeasureProtocolDependent",
+            "statistic": self.statistic.to_dict(),
             "estimator_name": self.estimator_name,
             "sanity_bound": self.sanity_bound,
         }

@@ -5,11 +5,11 @@ import pytest
 
 from lenpro.estimators.estimator import Estimator
 from lenpro.protocols.ldp_protocol import LDPProtocol
+from lenpro.statistics.statistics import Statistic
 from lenpro.measures.entry_level_measures import (
     EntryLevelMeasure,
     FractionRetainedEventsMeasure,
     FractionSyntheticEventsMeasure,
-    Metric,
     RelativeErrorMeasure,
     RelativeErrorMeasureProtocolDependent,
     PrefixMeanRelativeErrorMeasureProtocolDependent,
@@ -44,9 +44,11 @@ def test_relative_error_uses_sanity_bound():
     assert result == pytest.approx(0.5)
 
 
-def test_relative_error_accepts_custom_metric():
-    metric = Mock(side_effect=[10, 7])
-    measure = RelativeErrorMeasure(metric=metric)
+def test_relative_error_accepts_custom_statistic():
+    statistic = Mock(spec=Statistic)
+    statistic.evaluate.side_effect = [10, 7]
+
+    measure = RelativeErrorMeasure(statistic=statistic)
 
     original = ["original"]
     perturbed = ["perturbed"]
@@ -54,9 +56,9 @@ def test_relative_error_accepts_custom_metric():
     result = measure.process_data(original, perturbed)
 
     assert result == pytest.approx(0.3)
-    assert metric.call_count == 2
-    metric.assert_any_call(original)
-    metric.assert_any_call(perturbed)
+    assert statistic.evaluate.call_count == 2
+    statistic.evaluate.assert_any_call(data=original)
+    statistic.evaluate.assert_any_call(data=perturbed)
 
 
 def test_relative_error_rejects_non_positive_sanity_bound():
@@ -72,6 +74,9 @@ def test_relative_error_to_dict():
 
     assert measure.to_dict() == {
         "name": "RelativeErrorMeasure",
+        "statistic": {
+            "name": "Count",
+        },
         "sanity_bound": 2,
     }
 
@@ -80,15 +85,15 @@ def test_protocol_dependent_relative_error():
     estimator = Mock(spec=Estimator)
     estimator.estimate.side_effect = [7]
 
-    metric = Mock(spec=Metric)
-    metric.side_effect = [10]
+    statistic = Mock(spec=Statistic)
+    statistic.evaluate.side_effect = [10]
 
     protocol = Mock(spec=LDPProtocol)
     protocol.length_estimator = estimator
 
     measure = RelativeErrorMeasureProtocolDependent(
         estimator_name="length_estimator",
-        metric=metric
+        statistic=statistic
     )
 
     original = ["original"]
@@ -102,17 +107,16 @@ def test_protocol_dependent_relative_error():
 
     assert result == pytest.approx(0.3)
     assert estimator.estimate.call_count == 1
-    assert metric.call_count == 1
-    metric.assert_any_call(original)
+    assert statistic.evaluate.call_count == 1
+    statistic.evaluate.assert_any_call(original)
     estimator.estimate.assert_any_call(perturbed)
 
-
 def test_protocol_dependent_measure_requires_protocol():
-    metric = Mock(spec=Metric)
+    statistic = Mock(spec=Statistic)
 
     measure = RelativeErrorMeasureProtocolDependent(
         estimator_name="length_estimator",
-        metric=metric
+        statistic=statistic
     )
 
     with pytest.raises(
@@ -121,15 +125,14 @@ def test_protocol_dependent_measure_requires_protocol():
     ):
         measure.process_data([], [], protocol=None)
 
-
 def test_protocol_dependent_measure_requires_estimator():
     protocol = Mock(spec=LDPProtocol)
-    metric = Mock(spec=Metric)
+    statistic = Mock(spec=Statistic)
 
 
     measure = RelativeErrorMeasureProtocolDependent(
         estimator_name="missing_estimator",
-        metric=metric
+        statistic=statistic
     )
 
     with pytest.raises(
@@ -139,37 +142,40 @@ def test_protocol_dependent_measure_requires_estimator():
         measure.process_data([], [], protocol=protocol)
 
 
-
 def test_protocol_dependent_measure_to_dict():
-    metric = Mock(spec=Metric)
-
+    statistic = Mock(spec=Statistic)
+    statistic.to_dict.return_value = {
+        "name": "ExampleStatistic",
+    }
 
     measure = RelativeErrorMeasureProtocolDependent(
         estimator_name="length_estimator",
         sanity_bound=2,
-        metric=metric
+        statistic=statistic
     )
 
     assert measure.to_dict() == {
         "name": "RelativeErrorMeasureProtocolDependent",
-        "sanity_bound": 2,
+        "statistic": {
+            "name": "ExampleStatistic",
+        },
         "estimator_name": "length_estimator",
+        "sanity_bound": 2,
     }
-
 
 def test_prefix_mean_relative_error():
     estimator = Mock(spec=Estimator)
     estimator.estimate.side_effect = [0, 0, 1, 2, 3, 3, 4, 7]
 
-    metric = Mock(spec=Metric)
-    metric.side_effect = [0, 1, 2, 3, 3, 3, 4, 5]
+    statistic = Mock(spec=Statistic)
+    statistic.evaluate.side_effect = [0, 1, 2, 3, 3, 3, 4, 5]
 
     protocol = Mock(spec=LDPProtocol)
     protocol.prefix_length_estimator = estimator
 
     measure = PrefixMeanRelativeErrorMeasureProtocolDependent(
         estimator_name="prefix_length_estimator",
-        metric=metric
+        statistic=statistic
     )
 
     original = ["original"] * 8
@@ -183,8 +189,8 @@ def test_prefix_mean_relative_error():
 
     assert result == pytest.approx(67 / 240)
     assert estimator.estimate.call_count == 8
-    assert metric.call_count == 8
-    metric.assert_any_call(original)
+    assert statistic.evaluate.call_count == 8
+    statistic.evaluate.assert_any_call(original)
     estimator.estimate.assert_any_call(perturbed)
 
 
@@ -192,15 +198,15 @@ def test_prefix_mean_relative_error_different_lengths():
     estimator = Mock(spec=Estimator)
     estimator.estimate.side_effect = [4, 5, 5, 6]
 
-    metric = Mock(spec=Metric)
-    metric.side_effect = [4, 5, 6, 6]
+    statistic = Mock(spec=Statistic)
+    statistic.evaluate.side_effect = [4, 5, 6, 6]
 
     protocol = Mock(spec=LDPProtocol)
     protocol.prefix_length_estimator = estimator
 
     measure = PrefixMeanRelativeErrorMeasureProtocolDependent(
         estimator_name="prefix_length_estimator",
-        metric=metric
+        statistic=statistic
     )
 
     original = ["original"] * 3
@@ -214,8 +220,8 @@ def test_prefix_mean_relative_error_different_lengths():
 
     assert result == pytest.approx(1 / 24)
     assert estimator.estimate.call_count == 4
-    assert metric.call_count == 4
-    metric.assert_any_call(original)
+    assert statistic.evaluate.call_count == 4
+    statistic.evaluate.assert_any_call(original)
     estimator.estimate.assert_any_call(perturbed)
 
 

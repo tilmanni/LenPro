@@ -15,22 +15,35 @@ from lenpro.measures import (
     global_measures,
 )
 from lenpro.distributions import distributions
+from lenpro.statistics.statistics import CountStatistic
 from lenpro.stream_generation import (
     event_generators,
     length_generators,
     stream_generators,
 )
-from lenpro.stream_generation.start_point_generators import CenteredStreamStartPointGenerator
+from lenpro.stream_generation.start_point_generators import CenteredStreamStartPointGenerator, ConstantStreamStartPointGenerator
 
 
 ORIGINAL_EVENT = 1
 SYNTHETIC_EVENT = 2
 
+# Uniform over entire max_length range,
+# Gaussian with mean at middle of max_length
+# Could maybe replace with from_dict() formulations?
+DISTRIBUTIONS = [
+    "UniformDistribution",
+    "GaussianDistribution",    
+]
+
 EPSILONS = [0.1, 1, 2, 5, 10, 20]
-DATA_SET_SIZES = [5000]
+DATA_SET_SIZES = [50]
+#TODO Introduce Horizon as something separate from maximum lengths
 MAXIMUM_LENGTHS = [5, 10, 20, 40]
+# Also cut off values that exceed horizon for lenpro?
+# Currently not done
+FIXED_HORIZON_FACTOR = 2
 
-
+# Maybe consider sharing input data across repitions
 # Additional experimental settings; your original grids stay unchanged.
 REPETITIONS = 10
 MASTER_SEED = 12345
@@ -39,14 +52,13 @@ MASTER_SEED = 12345
 def register_measures(agg):
     is_original = lambda event: event == ORIGINAL_EVENT
     is_synthetic = lambda event: event == SYNTHETIC_EVENT
-    naive_length_measure = lambda data : sum(x is not None for x in data)
 
 
 
     for measure in [
-        entry_level_measures.RelativeErrorMeasure(metric=naive_length_measure, sanity_bound=1),
-        entry_level_measures.RelativeErrorMeasureProtocolDependent(estimator_name="length_estimator", metric=naive_length_measure, sanity_bound=1),
-        entry_level_measures.PrefixMeanRelativeErrorMeasureProtocolDependent(estimator_name="prefix_length_estimator", metric=naive_length_measure, sanity_bound=1),
+        entry_level_measures.RelativeErrorMeasure(statistic=CountStatistic(), sanity_bound=1),
+        entry_level_measures.RelativeErrorMeasureProtocolDependent(estimator_name="length_estimator", statistic=CountStatistic(), sanity_bound=1),
+        entry_level_measures.PrefixMeanRelativeErrorMeasureProtocolDependent(estimator_name="prefix_length_estimator", statistic=CountStatistic(), sanity_bound=1),
         entry_level_measures.FractionRetainedEventsMeasure(
             is_original=is_original
         ),
@@ -100,7 +112,7 @@ def make_stream_generator(distribution_name, maximum_length, rng):
         event_generator=event_generators.ConstantEventGenerator(
             ORIGINAL_EVENT
         ),
-        fixed_horizon=maximum_length,
+        fixed_horizon=maximum_length * FIXED_HORIZON_FACTOR,
         start_point_generator=CenteredStreamStartPointGenerator()
     )
 
@@ -144,62 +156,62 @@ def run_experiments():
         datetime.timezone.utc
     ).strftime("%Y%m%dT%H%M%S%fZ")
 
-    for distribution_name in [
-        "UniformDistribution",
-        "GaussianDistribution",
-    ]:
+
+    for distribution_name in DISTRIBUTIONS:
+    #TODO Separate maximum_length from Horizon
         for maximum_length in MAXIMUM_LENGTHS:
             for data_set_size in DATA_SET_SIZES:
+                experiment_seed = master.spawn(1)[0]
+
+                # One independent input seed, plus one seed for every
+                # protocol/epsilon combination.
+                children = experiment_seed.spawn(
+                    1 + 2 * len(EPSILONS)
+                )
+
+                input_seed = seed_as_int(children[0])
+
+                protocol_seeds = {}
+                seed_records = []
+                seed_index = 1
+
+                for protocol_class in [
+                    lenpro.LenPro,
+                    randomized_response.RandomizedResponse,
+                ]:
+                    for epsilon in EPSILONS:
+                        seed = seed_as_int(children[seed_index])
+                        seed_index += 1
+
+                        protocol_seeds[
+                            (protocol_class.__name__, epsilon)
+                        ] = seed
+
+                        seed_records.append({
+                            "protocol": protocol_class.__name__,
+                            "epsilon": epsilon,
+                            "seed": seed,
+                        })
+
+                generator = make_stream_generator(
+                    distribution_name,
+                    maximum_length,
+                    rng=np.random.default_rng(input_seed),
+                )
+
+                # Generate once: both protocols and all epsilons
+                # receive exactly the same original streams.
+                inputs = list(
+                    generator.generate_streams(data_set_size)
+                )
+                #TODO Address this
+                # Should Delta_Length change to Horizon Length? -> 
+                # Really only for Randomized Response
+                agg = make_aggregator(
+                    delta_length=maximum_length,
+                    protocol_seeds=protocol_seeds,
+                )
                 for repetition in range(REPETITIONS):
-                    experiment_seed = master.spawn(1)[0]
-
-                    # One independent input seed, plus one seed for every
-                    # protocol/epsilon combination.
-                    children = experiment_seed.spawn(
-                        1 + 2 * len(EPSILONS)
-                    )
-
-                    input_seed = seed_as_int(children[0])
-
-                    protocol_seeds = {}
-                    seed_records = []
-                    seed_index = 1
-
-                    for protocol_class in [
-                        lenpro.LenPro,
-                        randomized_response.RandomizedResponse,
-                    ]:
-                        for epsilon in EPSILONS:
-                            seed = seed_as_int(children[seed_index])
-                            seed_index += 1
-
-                            protocol_seeds[
-                                (protocol_class.__name__, epsilon)
-                            ] = seed
-
-                            seed_records.append({
-                                "protocol": protocol_class.__name__,
-                                "epsilon": epsilon,
-                                "seed": seed,
-                            })
-
-                    generator = make_stream_generator(
-                        distribution_name,
-                        maximum_length,
-                        rng=np.random.default_rng(input_seed),
-                    )
-
-                    # Generate once: both protocols and all epsilons
-                    # receive exactly the same original streams.
-                    inputs = list(
-                        generator.generate_streams(data_set_size)
-                    )
-
-                    agg = make_aggregator(
-                        delta_length=maximum_length,
-                        protocol_seeds=protocol_seeds,
-                    )
-
                     result = execution.execution_from_data(
                         aggregator=agg,
                         input_data=inputs,
@@ -211,6 +223,7 @@ def run_experiments():
                             "protocol_seeds": seed_records,
                             "shared_inputs_across_protocols": True,
                             "shared_inputs_across_epsilons": True,
+                            "shared_inputs_across_repititions": True,
                         },
                     )
 
