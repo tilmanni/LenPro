@@ -26,7 +26,6 @@ def lenpro_empty_output_probability(
 ) -> AnalyticalResult:
     epsilon = protocol["epsilon"]
     delta_length = protocol["delta_length"]
-    fixed_horizon = stream_generator["fixed_horizon"]
 
 
     reconstructed_distribution = distribution_from_dict(distribution_config=distribution)
@@ -35,7 +34,7 @@ def lenpro_empty_output_probability(
     p = float(-np.expm1(-epsilon / delta_length))
     # Sum over fixed horizon could turn into problem if horizon and actual sampling divorced
     # -> use delta length?
-    value = sum(reconstructed_distribution.pmf(x=x) * np.pow(1 - p, x) / (2 - p) for x in range(1, fixed_horizon))
+    value = sum(reconstructed_distribution.pmf(x=x) * np.pow(1 - p, x) / (2 - p) for x in range(1, delta_length + 1))
 
     return AnalyticalResult(
         value=float(value),
@@ -60,7 +59,7 @@ def randomized_response_empty_output_probability(
 
     reconstructed_distribution = distribution_from_dict(distribution_config=distribution)
 
-    value = sum(reconstructed_distribution.pmf(x=x) * np.pow(q, x) * np.pow(p, fixed_horizon - x) for x in range(1, fixed_horizon))
+    value = sum(reconstructed_distribution.pmf(x=x) * np.pow(q, x) * np.pow(p, fixed_horizon - x) for x in range(1, delta_length + 1))
 
     return AnalyticalResult(
         value=float(value),
@@ -75,12 +74,14 @@ def lenpro_length_unchanged_probability(
     delta_length = protocol["delta_length"]
 
 
+    reconstructed_distribution = distribution_from_dict(distribution_config=distribution)
 
+    zero_prob = reconstructed_distribution.pmf(x = 0)
 
     p = float(-np.expm1(-epsilon / delta_length))
 
     # Replace with the derived formulas.
-    value = p / (2 - p)
+    value = zero_prob + (1 - zero_prob) * (p / (2 - p))
 
     return AnalyticalResult(
         value=float(value),
