@@ -9,15 +9,16 @@ from lenpro.stream_generation import event_generators
 
 Stream = Sequence[Any]
 
-class FixedLength(ldp_protocol.LDPProtocol):
+class UniformLength(ldp_protocol.LDPProtocol):
 
-    def __init__(self, epsilon: float, fixed_length: int, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator):
-        super().__init__(epsilon=epsilon)
-
-        if fixed_length < 0: 
-            raise ValueError("fixed_length must be non-negative")
-
-        self.fixed_length = fixed_length
+    def __init__(self, epsilon: float, uniform_length: int, delta_length: int, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, extendable: bool = False):
+        super().__init__(epsilon=epsilon, delta_length=delta_length)
+        if not np.isfinite(uniform_length):
+            raise ValueError("uniform_length must be finite")
+        if uniform_length < 0: 
+            raise ValueError("uniform_length must be non-negative")
+        self.extendable = extendable
+        self.uniform_length = uniform_length
         self.perturbing_mechanism = perturbing_mechanism
         self.synthetic_event_generator = synthetic_event_generator
         self._reset_connection()
@@ -31,16 +32,16 @@ class FixedLength(ldp_protocol.LDPProtocol):
         if event is not None:
             if not self.connected:
                 self.connected = True
-            if self.k  < self.fixed_length:
+            if self.k  < self.uniform_length:
                 self.k += 1
                 # Assume non-adaptive for now
                 return self.perturbing_mechanism.perturb_event(event=event)
-            # Cut events if already returned fixed_length events
+            # Cut events if already returned uniform_length events
             return None 
         # event is None
         if not self.connected:
             return None
-        if self.k  < self.fixed_length:
+        if self.k  < self.uniform_length:
             # Generate fake events until length is reached
             self.k += 1
             # Assume independent generator for now
@@ -50,9 +51,10 @@ class FixedLength(ldp_protocol.LDPProtocol):
 
     def process_stream(self, stream: Stream) -> Stream:
         processed_stream = [self.process_event(event=event) for event in stream]
-        while (self.connected and self.k < self.fixed_length):
-            # Assumes stream can be extended over its length. Not necessarily true
-            processed_stream.append(self.process_event(None))
+        if (self.extendable):
+            while (self.connected and self.k < self.uniform_length):
+                # Assumes stream can be extended over its length. Not necessarily true
+                processed_stream.append(self.process_event(None))
         self._reset_connection()
         return processed_stream
 
@@ -60,7 +62,9 @@ class FixedLength(ldp_protocol.LDPProtocol):
         return {
             "name": "Fixed Length",
             "epsilon": self.epsilon,
-            "fixed_length": self.fixed_length,
+            "delta_length": self.delta_length,
+            "uniform_length": self.uniform_length,
             "perturbing_mechanism": self.perturbing_mechanism.to_dict(),
             "synthetic_event_generator": self.synthetic_event_generator.to_dict(),
+            "extendable": self.extendable,
         }

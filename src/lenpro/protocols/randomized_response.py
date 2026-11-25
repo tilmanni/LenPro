@@ -6,7 +6,6 @@ from typing import Any
 from lenpro.protocols import ldp_protocol
 from lenpro.mechanisms import mechanisms
 from lenpro.stream_generation import event_generators
-from lenpro.estimators.randomized_response_estimator import RandomizedResponseCountEstimator
 
 
 Stream = Sequence[Any]
@@ -17,17 +16,10 @@ class RandomizedResponse(ldp_protocol.LDPProtocol):
     # could also do rng: np.random.Generator | None = None,
 
     def __init__(self, epsilon: float, delta_length: int, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, rng: np.random.Generator | None = None) -> None:
-        super().__init__(epsilon=epsilon)
-
-        if not np.isfinite(delta_length):
-            raise ValueError("delta_length must be finite")
-
-        if delta_length <= 0:
-            raise ValueError("delta_length must be greater than zero")
-
+        super().__init__(epsilon=epsilon, delta_length=delta_length)
 
         self.rng = rng if rng is not None else np.random.default_rng()
-        self.delta_length = delta_length
+
         privacy_per_event = epsilon / delta_length
 
         exp_negative = np.exp(-privacy_per_event)
@@ -37,8 +29,6 @@ class RandomizedResponse(ldp_protocol.LDPProtocol):
         self.q = exp_negative / (1.0 + exp_negative)
         self.perturbing_mechanism = perturbing_mechanism
         self.synthetic_event_generator = synthetic_event_generator
-        self.count_estimator = RandomizedResponseCountEstimator(self)
-        self.prefix_count_estimator = RandomizedResponseCountEstimator(self)
 
     def process_event(self, event):
         if event is not None:

@@ -15,6 +15,7 @@ def make_protocol(
     delta_length=1.0,
     a=0,
     r=0,
+    extendable=True,
 ):
     mechanism = Mock(spec=Mechanism)
     mechanism.perturb_event.return_value = "perturbed"
@@ -34,6 +35,7 @@ def make_protocol(
         perturbing_mechanism=mechanism,
         synthetic_event_generator=event_generator,
         rng=rng,
+        extendable=extendable,
     )
 
     return protocol, mechanism, event_generator, rng
@@ -358,11 +360,6 @@ def test_synthetic_events_are_generated_even_when_all_originals_suppressed():
         "synthetic-2",
     ]
 
-    # Wrong, always have to suppress r values, i.e. 
-    # None, None, synthetic-1, synthetic-2.
-    # Adjusted length = 1 - 2 + 3 = 2.
-    # The original event is suppressed, but two synthetic
-    # events must still be generated.
     result = protocol.process_stream(["original"])
 
     assert result == [
@@ -377,6 +374,31 @@ def test_synthetic_events_are_generated_even_when_all_originals_suppressed():
     assert event_generator.generate_event.call_args_list == [
         call(previous_event=None),
     ]
+
+def test_extendable_false_synthetic_events_not_generated_after_end():
+    protocol, mechanism, event_generator, _ = make_protocol(
+        a=3,
+        r=2,
+        extendable=False,
+    )
+
+    event_generator.generate_event.side_effect = [
+        "synthetic-1",
+        "synthetic-2",
+    ]
+
+    result = protocol.process_stream(
+        ["event-1", "event-2", "event-3"]
+    )
+
+    assert result == [
+        None,
+        None,
+        "perturbed",
+    ]
+
+    event_generator.generate_event.assert_not_called()
+
 
 
 def test_negative_adjusted_length_is_treated_as_zero():
@@ -465,6 +487,7 @@ def test_to_dict():
         perturbing_mechanism=mechanism,
         synthetic_event_generator=event_generator,
         rng=np.random.default_rng(42),
+        extendable=False
     )
 
     assert protocol.to_dict() == {
@@ -477,6 +500,7 @@ def test_to_dict():
         "synthetic_event_generator": {
             "name": "ExampleEventGenerator",
         },
+        "extendable": False,
     }
 
     mechanism.to_dict.assert_called_once_with()

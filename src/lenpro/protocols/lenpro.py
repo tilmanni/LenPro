@@ -5,28 +5,22 @@ from typing import Any
 from lenpro.protocols import ldp_protocol
 from lenpro.mechanisms import mechanisms
 from lenpro.stream_generation import event_generators
-from lenpro.estimators.lenpro_estimators import LenProCountEstimator, LenProPrefixLengthMedianEstimator
 
 Stream = Sequence[Any]
 
 
 class LenPro(ldp_protocol.LDPProtocol):
 
-    def __init__(self, epsilon, delta_length, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, rng: np.random.Generator | None = None,) -> None:
-        super().__init__(epsilon=epsilon)
+    def __init__(self, epsilon, delta_length, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, rng: np.random.Generator | None = None, extendable: bool = False) -> None:
+        super().__init__(epsilon=epsilon, delta_length=delta_length)
         if epsilon == 0:
             raise ValueError("epsilon must be greater than zero for LenPro")
-        if not np.isfinite(delta_length):
-            raise ValueError("delta_length must be finite")
-        if delta_length <= 0:
-            raise ValueError("delta_length must be greater than zero")
+    
+        self.extendable = extendable
         self.rng = rng if rng is not None else np.random.default_rng()
-        self.delta_length = delta_length
         self.p = float(-np.expm1(-epsilon / delta_length))
         self.perturbing_mechanism = perturbing_mechanism
         self.synthetic_event_generator = synthetic_event_generator
-        self.count_estimator = LenProCountEstimator()
-        self.prefix_count_estimator = LenProCountEstimator()
         self._reset_connection()
 
     def _reset_connection(self) -> None:
@@ -95,8 +89,9 @@ class LenPro(ldp_protocol.LDPProtocol):
         # Generate trailing synthetic events until 
         # adjusted output length is reached
         # Not just synthetic events, also remove events if r not full
-        while (self.connected and self.k < self._adjusted_length()):
-            processed_stream.append(self.process_event(None))
+        if (self.extendable):
+            while (self.connected and self.k < self._adjusted_length()):
+                processed_stream.append(self.process_event(None))
         # Reset connection so that another stream can be safely processed
         self._reset_connection()
         return processed_stream
@@ -108,6 +103,7 @@ class LenPro(ldp_protocol.LDPProtocol):
             "delta_length": self.delta_length,
             "perturbing_mechanism": self.perturbing_mechanism.to_dict(),
             "synthetic_event_generator": self.synthetic_event_generator.to_dict(),
+            "extendable": self.extendable,
         }
 
 

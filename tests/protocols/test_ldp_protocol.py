@@ -22,17 +22,17 @@ class ConcreteProtocol(LDPProtocol):
 
 def test_ldp_protocol_cannot_be_instantiated():
     with pytest.raises(TypeError):
-        LDPProtocol(epsilon=1.0)
+        LDPProtocol(epsilon=1.0, delta_length=5)
 
 
 def test_ldp_protocol_stores_epsilon():
-    protocol = ConcreteProtocol(epsilon=1.5)
+    protocol = ConcreteProtocol(epsilon=1.5, delta_length=5)
 
     assert protocol.epsilon == 1.5
 
 
 def test_ldp_protocol_accepts_zero_epsilon():
-    protocol = ConcreteProtocol(epsilon=0)
+    protocol = ConcreteProtocol(epsilon=0, delta_length=5)
 
     assert protocol.epsilon == 0
 
@@ -49,7 +49,7 @@ def test_ldp_protocol_rejects_negative_epsilon(epsilon):
         ValueError,
         match="epsilon must be non-negative",
     ):
-        ConcreteProtocol(epsilon=epsilon)
+        ConcreteProtocol(epsilon=epsilon, delta_length=5)
 
 
 @pytest.mark.parametrize(
@@ -65,4 +65,4 @@ def test_ldp_protocol_rejects_non_finite_epsilon(epsilon):
         ValueError,
         match="epsilon must be finite",
     ):
-        ConcreteProtocol(epsilon=epsilon)
+        ConcreteProtocol(epsilon=epsilon, delta_length=5)
