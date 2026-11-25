@@ -4,7 +4,7 @@ import pytest
 
 from lenpro.stream_generation.event_generators import EventGenerator
 from lenpro.stream_generation.length_generators import LengthGenerator
-from lenpro.stream_generation.start_point_generators import StartPointGenerator, CenteredStreamStartPointGenerator
+from lenpro.stream_generation.start_point_generators import StartPointGenerator, CenteredStreamStartPointGenerator, ConstantStreamStartPointGenerator
 from lenpro.stream_generation.stream_generators import (
     StandardStreamGenerator,
     StreamGenerator,
@@ -34,7 +34,7 @@ def test_stream_generator_cannot_be_instantiated():
         StreamGenerator()
 
 
-def test_generate_stream_without_fixed_length():
+def test_generate_stream_without_uniform_length():
     generator, length_generator, event_generator = make_generator(
         length=3,
         events=["a", "b", "c"],
@@ -91,14 +91,13 @@ def test_short_stream_with_odd_padding_difference():
     assert event_generator.generate_event.call_count == 2
 
 # Centered Stream
-def test_stream_longer_than_fixed_length_is_truncated():
+def test_stream_longer_than_uniform_length_is_truncated():
     generator, _, event_generator = make_generator(
         length=5,
-        events=["a", "b", "c"],
+        events=["a", "b", "c", "d", "d"],
         fixed_horizon=3,
         start_point_generator=CenteredStreamStartPointGenerator()
     )
-
     stream = generator.generate_stream()
 
     assert stream == ["a", "b", "c"]
@@ -106,7 +105,7 @@ def test_stream_longer_than_fixed_length_is_truncated():
     assert event_generator.generate_event.call_count == 3
 
 # Centered Stream
-def test_stream_equal_to_fixed_length_is_not_padded():
+def test_stream_equal_to_uniform_length_is_not_padded():
     generator, _, event_generator = make_generator(
         length=3,
         events=["a", "b", "c"],
@@ -119,6 +118,45 @@ def test_stream_equal_to_fixed_length_is_not_padded():
     assert stream == ["a", "b", "c"]
     assert None not in stream
     assert event_generator.generate_event.call_count == 3
+
+
+def test_stream_only_start_point_generator():
+    generator, _, event_generator = make_generator(
+        length=3,
+        events=["a", "b", "c"],
+        start_point_generator=ConstantStreamStartPointGenerator(start_point=1)
+    )
+
+    stream = generator.generate_stream()
+
+    assert stream == [None, "a", "b", "c"]
+    assert event_generator.generate_event.call_count == 3
+
+def test_stream_start_point_generator_truncation():
+    generator, _, event_generator = make_generator(
+        length=3,
+        events=["a", "b", "c"],
+        fixed_horizon=3,
+        start_point_generator=ConstantStreamStartPointGenerator(start_point=-1)
+    )
+
+    stream = generator.generate_stream()
+
+    assert stream == ["a", "b", "c"]
+    assert event_generator.generate_event.call_count == 3
+
+def test_stream_only_fixed_horizon():
+    generator, _, event_generator = make_generator(
+        length=3,
+        events=["a", "b"],
+        fixed_horizon=2
+    )
+
+    stream = generator.generate_stream()
+
+    assert stream == ["a", "b"]
+    assert None not in stream
+    assert event_generator.generate_event.call_count == 2
 
 
 def test_generate_multiple_streams():

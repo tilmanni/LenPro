@@ -6,6 +6,9 @@ from lenpro.stream_generation.event_generators import EventGenerator
 from lenpro.stream_generation.length_generators import LengthGenerator
 from lenpro.stream_generation.start_point_generators import StartPointGenerator
 
+
+DEFAULT_START_POINT = 0
+
 class StreamGenerator(ABC):
 
     @abstractmethod
@@ -28,11 +31,6 @@ class StandardStreamGenerator(StreamGenerator):
         if fixed_horizon is not None and fixed_horizon < 0:
             raise ValueError("fixed_horizon must be non-negative")
 
-        if (fixed_horizon is None) != (start_point_generator is None):
-            raise ValueError(
-                "fixed_horizon and start_point_generator must either "
-                "both be provided or both be None"
-            )
         self.length_generator = length_generator
         self.event_generator = event_generator
         self.start_point_generator = start_point_generator
@@ -41,19 +39,32 @@ class StandardStreamGenerator(StreamGenerator):
     def generate_stream(self):
         length = self.length_generator.generate_length()
         stream = []
+        # default start value
+        start_point = DEFAULT_START_POINT
+
+        # Fixed horizon not specified
         if self.fixed_horizon is None:
-            for _ in range(length):
-                stream.append(self.event_generator.generate_event())
+            if self.start_point_generator is not None:
+                start_point = max(DEFAULT_START_POINT, self.start_point_generator.generate_start_point(length=length))
+            # Pad with None's until start point
+            stream.extend([None] * start_point)
+            stream.extend([self.event_generator.generate_event() for _ in range(length)])
+        # Fixed horizon specified
         else:
-            assert self.start_point_generator is not None and self.fixed_horizon is not None 
-            length = min(length, self.fixed_horizon)
-            start_point = self.start_point_generator.generate_start_point(fixed_horizon=self.fixed_horizon, length=length)
-            for _ in range(start_point):
-                stream.append(None)
-            for _ in range(min(self.fixed_horizon, length)):
-                stream.append(self.event_generator.generate_event())
-            for _ in range(max(0, self.fixed_horizon - (start_point + length))):
-                stream.append(None)
+            if self.start_point_generator is not None:
+                start_point = max(DEFAULT_START_POINT, self.start_point_generator.generate_start_point(fixed_horizon=self.fixed_horizon, length=length))
+            # Start point may not be smaller than 0
+            padded_start_point = min(start_point, self.fixed_horizon)
+            # Ensures length + start point does not exceed horizon
+            effective_length = min(length, self.fixed_horizon - padded_start_point)
+            
+            stream.extend([None] * padded_start_point)
+            
+            stream.extend([self.event_generator.generate_event() for _ in range(effective_length)])
+            
+            remaining_padding = self.fixed_horizon - (padded_start_point + effective_length)
+            if remaining_padding > 0:
+                stream.extend([None] * remaining_padding)
             
         return stream 
 
