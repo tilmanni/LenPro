@@ -3,11 +3,11 @@ from unittest.mock import Mock, call
 import pytest
 
 from lenpro.mechanisms.mechanisms import Mechanism
-from lenpro.protocols.uniform_length import UniformLength
+from lenpro.protocols.fixed_length import FixedLength
 from lenpro.stream_generation.event_generators import EventGenerator
 
 
-def make_protocol(uniform_length=3, extendable = True):
+def make_protocol(fixed_length=3):
     mechanism = Mock(spec=Mechanism)
     mechanism.perturb_event.side_effect = (
         lambda event: f"perturbed-{event}"
@@ -16,13 +16,11 @@ def make_protocol(uniform_length=3, extendable = True):
     event_generator = Mock(spec=EventGenerator)
     event_generator.generate_event.return_value = "synthetic"
 
-    protocol = UniformLength(
+    protocol = FixedLength(
         epsilon=1.0,
-        uniform_length=uniform_length,
+        fixed_length=fixed_length,
         perturbing_mechanism=mechanism,
         synthetic_event_generator=event_generator,
-        delta_length=5,
-        extendable=extendable
     )
 
     return protocol, mechanism, event_generator
@@ -61,7 +59,7 @@ def test_none_before_connection_returns_none():
 
 
 def test_none_during_connection_generates_synthetic_event():
-    protocol, _, event_generator = make_protocol(uniform_length=3)
+    protocol, _, event_generator = make_protocol(fixed_length=3)
 
     protocol.process_event("a")
     result = protocol.process_event(None)
@@ -72,8 +70,8 @@ def test_none_during_connection_generates_synthetic_event():
     event_generator.generate_event.assert_called_once_with()
 
 
-def test_events_beyond_uniform_length_are_removed():
-    protocol, mechanism, _ = make_protocol(uniform_length=2)
+def test_events_beyond_fixed_length_are_removed():
+    protocol, mechanism, _ = make_protocol(fixed_length=2)
 
     results = [
         protocol.process_event("a"),
@@ -93,7 +91,7 @@ def test_events_beyond_uniform_length_are_removed():
 
 
 def test_none_resets_completed_connection():
-    protocol, _, event_generator = make_protocol(uniform_length=1)
+    protocol, _, event_generator = make_protocol(fixed_length=1)
 
     protocol.process_event("a")
     result = protocol.process_event(None)
@@ -105,7 +103,7 @@ def test_none_resets_completed_connection():
 
 
 def test_process_event_multiple_connections():
-    protocol, mechanism, _ = make_protocol(uniform_length=3)
+    protocol, mechanism, _ = make_protocol(fixed_length=3)
 
     events = [None, None, "a", None, None, None, "a", "b", "c", "d"]
     results = [protocol.process_event(event=event) for event in events]
@@ -115,7 +113,7 @@ def test_process_event_multiple_connections():
 
 def test_process_stream_fills_missing_events():
     protocol, mechanism, event_generator = make_protocol(
-        uniform_length=3
+        fixed_length=3
     )
 
     result = protocol.process_stream(["a"])
@@ -131,7 +129,7 @@ def test_process_stream_fills_missing_events():
 
 def test_process_stream_cuts_excess_events():
     protocol, mechanism, event_generator = make_protocol(
-        uniform_length=2
+        fixed_length=2
     )
 
     result = protocol.process_stream(["a", "b", "c"])
@@ -146,7 +144,7 @@ def test_process_stream_cuts_excess_events():
 
 
 def test_process_stream_preserves_padding_before_connection():
-    protocol, _, event_generator = make_protocol(uniform_length=2)
+    protocol, _, event_generator = make_protocol(fixed_length=2)
 
     result = protocol.process_stream([None, "a"])
 
@@ -169,7 +167,7 @@ def test_empty_stream_returns_empty_list():
 
 
 def test_process_stream_resets_protocol_state():
-    protocol, _, _ = make_protocol(uniform_length=2)
+    protocol, _, _ = make_protocol(fixed_length=2)
 
     protocol.process_stream(["a"])
 
@@ -178,7 +176,7 @@ def test_process_stream_resets_protocol_state():
 
 
 def test_protocol_can_process_multiple_streams():
-    protocol, _, _ = make_protocol(uniform_length=2)
+    protocol, _, _ = make_protocol(fixed_length=2)
 
     first = protocol.process_stream(["a"])
     second = protocol.process_stream(["b"])
@@ -187,17 +185,16 @@ def test_protocol_can_process_multiple_streams():
     assert second == ["perturbed-b", "synthetic"]
 
 
-def test_negative_uniform_length_is_rejected():
+def test_negative_fixed_length_is_rejected():
     mechanism = Mock(spec=Mechanism)
     event_generator = Mock(spec=EventGenerator)
 
-    with pytest.raises(ValueError, match="uniform_length"):
-        UniformLength(
+    with pytest.raises(ValueError, match="fixed_length"):
+        FixedLength(
             epsilon=1.0,
-            uniform_length=-1,
+            fixed_length=-1,
             perturbing_mechanism=mechanism,
             synthetic_event_generator=event_generator,
-            delta_length=5,
         )
 
 
@@ -212,27 +209,21 @@ def test_to_dict():
         "name": "ExampleEventGenerator",
     }
 
-    protocol = UniformLength(
+    protocol = FixedLength(
         epsilon=1.0,
-        uniform_length=5,
+        fixed_length=5,
         perturbing_mechanism=mechanism,
         synthetic_event_generator=event_generator,
-        extendable=False,
-        delta_length=5,
-
     )
 
     assert protocol.to_dict() == {
         "name": "Fixed Length",
         "epsilon": 1.0,
-        #TODO remove (only here temporarily, to help with visualization)
-        "delta_length": 5,
-        "uniform_length": 5,
+        "fixed_length": 5,
         "perturbing_mechanism": {
             "name": "ExampleMechanism",
         },
         "synthetic_event_generator": {
             "name": "ExampleEventGenerator",
         },
-        "extendable": False,
     }
