@@ -3,6 +3,7 @@ import pytest
 
 from lenpro.distributions.distributions import (
     Distribution,
+    TruncatedGaussianDistribution,
     UniformDistribution,
     GaussianDistribution,
     ZipfDistribution,
@@ -36,6 +37,12 @@ def test_uniform_to_dict():
         "low": 5,
     }
 
+def test_uniform_pmf():
+    distribution = UniformDistribution(low=5, high=10)
+
+    assert distribution.pmf(5) == 1 / 5
+    assert distribution.pmf(0) == 0
+
 
 def test_gaussian_sample_is_integer():
     distribution = GaussianDistribution(
@@ -58,6 +65,62 @@ def test_gaussian_to_dict():
         "scale": 2,
     }
 
+
+def test_truncated_gaussian_is_integer():
+    distribution = TruncatedGaussianDistribution(
+        mean= 10,
+        scale= 2,
+        rng=np.random.default_rng(42),
+        low=1,
+        high=20,
+    )
+
+    sample = distribution.sample()
+
+    assert isinstance(sample, (int, np.integer))
+
+
+def test_truncated_gaussian_truncation_low():
+    distribution = TruncatedGaussianDistribution(
+        mean= 10,
+        scale= 1,
+        rng=np.random.default_rng(42),
+        low=100,
+        high=120,
+    )
+
+    sample = distribution.sample()
+
+    assert sample == 100
+
+def test_truncated_gaussian_truncation_high():
+    distribution = TruncatedGaussianDistribution(
+        mean= 100,
+        scale= 1,
+        rng=np.random.default_rng(42),
+        low=0,
+        high=10,
+    )
+
+    sample = distribution.sample()
+
+    assert sample == 10
+
+
+def test_truncated_gaussian_pmf():
+    distribution = TruncatedGaussianDistribution(
+        mean= 10,
+        scale=1,
+        rng=np.random.default_rng(42),
+        low=8,
+        high=12,
+    )
+
+    assert distribution.pmf(10) == pytest.approx(0.3829249225)
+    assert distribution.pmf(8) == pytest.approx(0.0668072013)
+    assert distribution.pmf(12) == pytest.approx(0.0668072013)
+    assert distribution.pmf(0) == 0
+    assert distribution.pmf(20) == 0
 
 def test_zipf_samples_are_positive():
     distribution = ZipfDistribution(

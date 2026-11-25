@@ -20,7 +20,7 @@ class Distribution(ABC):
 
 class UniformDistribution(Distribution):
 
-    def __init__(self, low, high, rng: np.random.Generator | None = None,) -> None:
+    def __init__(self, low: int, high: int, rng: np.random.Generator | None = None) -> None:
         self.rng = rng if rng is not None else np.random.default_rng()
         self.high = high
         self.low = low
@@ -43,7 +43,9 @@ class UniformDistribution(Distribution):
 
 class GaussianDistribution(Distribution):
 
-    def __init__(self, mean, scale, rng: np.random.Generator | None = None,) -> None:
+    # Careful with usage, can generate values in negative range (pmf is not accurate if value is then 
+    # truncated)
+    def __init__(self, mean: float, scale: float, rng: np.random.Generator | None = None) -> None:
         self.rng = rng if rng is not None else np.random.default_rng()
         self.mean = mean
         self.scale = scale
@@ -63,9 +65,42 @@ class GaussianDistribution(Distribution):
         return float(norm.cdf(x = x  + 0.5, loc=self.mean, scale=self.scale) - norm.cdf(x = x  - 0.5, loc=self.mean, scale=self.scale))
         #return float(norm.pdf(x=x, loc=self.mean, scale=self.scale))
 
+class TruncatedGaussianDistribution(Distribution):
+    """
+     Samples from continuous gaussian distribution, rounds value to nearest integer. If 
+     outside [low, high], truncates sample to boundary (high inclusive).
+    """
+    def __init__(self, mean: float, scale: float, low: int, high: int, rng: np.random.Generator | None = None) -> None:
+        self.rng = rng if rng is not None else np.random.default_rng()
+        self.mean = mean
+        self.scale = scale
+        self.low = low
+        self.high = high
+
+    def sample(self) -> int:
+        return max(self.low, min(self.high, np.round(self.rng.normal(loc=self.mean, scale=self.scale)).astype(int)))
+
+    def to_dict(self) -> dict:
+        return {
+            "name": "TruncatedGaussianDistribution",
+            "mean": self.mean,
+            "scale": self.scale,
+            "low": self.low,
+            "high": self.high,
+        }
+
+    def pmf(self, x: int) -> float:
+        if x < self.low or x > self.high:
+            return 0.0
+        elif x == self.low:
+            return float(norm.cdf(x = x  + 0.5, loc=self.mean, scale=self.scale))
+        elif x == self.high:
+            return float(1 - norm.cdf(x = x  - 0.5, loc=self.mean, scale=self.scale))
+        return float(norm.cdf(x = x  + 0.5, loc=self.mean, scale=self.scale) - norm.cdf(x = x  - 0.5, loc=self.mean, scale=self.scale))
+
 class ZipfDistribution(Distribution):
 
-    def __init__(self, a, rng: np.random.Generator | None = None,) -> None:
+    def __init__(self, a, rng: np.random.Generator | None = None) -> None:
         self.rng = rng if rng is not None else np.random.default_rng()
         self.a = a
 
@@ -90,5 +125,7 @@ def distribution_from_dict(distribution_config: Mapping[str, Any], rng: np.rando
         return GaussianDistribution(mean=distribution_config["mean"], scale=distribution_config["scale"], rng=rng)
     elif distribution_config["name"] == "ZipfDistribution":
         return ZipfDistribution(a=distribution_config["a"], rng=rng)
+    elif distribution_config["name"] == "TruncatedGaussianDistribution":
+        return TruncatedGaussianDistribution(mean=distribution_config["mean"], scale=distribution_config["scale"], rng=rng, low=distribution_config["low"], high=distribution_config["high"])
     else:
         raise ValueError(f"Unknown distribution: {distribution_config["name"]}")
