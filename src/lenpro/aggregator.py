@@ -1,5 +1,4 @@
-from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 from lenpro.measures.aggregate_measures import AggregateMeasure
@@ -17,13 +16,17 @@ Dataset = Sequence[Stream]
 class Aggregator:
 
     def __init__(self) -> None:
-        self.protocols: list[LDPProtocol] = []
+        self.protocols: list[tuple[LDPProtocol, tuple[str, str]]] = []
         self.entry_level_measures: list[EntryLevelMeasure] = []
         self.aggregate_measures: list[AggregateMeasure] = []
         self.global_measures: list[GlobalMeasure] = []
     
-    def register_protocol(self, ldp_protocol: LDPProtocol) -> None:
-        self.protocols.append(ldp_protocol)
+    def register_protocol(self, ldp_protocol: LDPProtocol, protocol_meta_data: tuple[str, str] | None = None) -> None: 
+        # Have to also register protocol variant label / id for later plotting
+        if protocol_meta_data is None:
+            name = type(ldp_protocol).__name__
+            protocol_meta_data = (name, name)
+        self.protocols.append((ldp_protocol, protocol_meta_data))
 
     def register_entry_level_measure(self, entry_level_measure: EntryLevelMeasure) -> None:
         self.entry_level_measures.append(entry_level_measure)
@@ -35,18 +38,18 @@ class Aggregator:
         self.global_measures.append(global_measure) 
 
     def run_simulation(self, input_stream: Stream) -> list[Stream]:
-        return [protocol.process_stream(input_stream) for protocol in self.protocols]    
+        return [protocol[0].process_stream(input_stream) for protocol in self.protocols]    
 
     def measure_run(self, input_streams: Dataset) -> list[dict[str, Any]]:
         results = []
         for protocol in self.protocols:
 
-            protocol_outputs = [protocol.process_stream(stream) for stream in input_streams]
+            protocol_outputs = [protocol[0].process_stream(stream) for stream in input_streams]
 
             entry_level_results = []
             for measure in self.entry_level_measures:
                 values = [
-                    measure.process_data(original_data=original, perturbed_data=perturbed, protocol=protocol) for original, perturbed in zip(input_streams, protocol_outputs)
+                    measure.process_data(original_data=original, perturbed_data=perturbed, protocol=protocol[0]) for original, perturbed in zip(input_streams, protocol_outputs)
                 ]
                 entry_level_results.append({
                     "measure": measure.to_dict(),
@@ -66,11 +69,14 @@ class Aggregator:
             for global_measure in self.global_measures:
                 global_results.append({
                     "measure": global_measure.to_dict(),
-                    "value": global_measure.process_dataset(original_dataset=input_streams, perturbed_dataset=protocol_outputs, protocol=protocol),
+                    "value": global_measure.process_dataset(original_dataset=input_streams, perturbed_dataset=protocol_outputs, protocol=protocol[0]),
                 })
 
+            # Index by protocol variant as well? 
             results.append({
-                "protocol": protocol.to_dict(),
+                "protocol_id": protocol[1][0],
+                "protocol_label": protocol[1][1],
+                "protocol": protocol[0].to_dict(),
                 # For now, do not store entry level results.
                 #"entry_level": entry_level_results,
                 "aggregate": aggregate_results,

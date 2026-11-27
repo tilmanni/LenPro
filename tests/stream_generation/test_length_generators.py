@@ -81,7 +81,7 @@ def test_generate_length_with_uniform_distribution_respects_range():
 
     lengths = [generator.generate_length() for _ in range(100)]
 
-    assert all(5 <= length < 10 for length in lengths)
+    assert all(5 <= length < 10 + 1 for length in lengths)
 
 
 def test_to_dict():

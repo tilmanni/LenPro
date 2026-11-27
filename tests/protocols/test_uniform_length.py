@@ -223,7 +223,7 @@ def test_to_dict():
     )
 
     assert protocol.to_dict() == {
-        "name": "Fixed Length",
+        "name": "UniformLength",
         "epsilon": 1.0,
         "delta_length": 5,
         "uniform_length": 5,

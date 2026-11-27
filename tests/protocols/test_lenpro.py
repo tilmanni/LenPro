@@ -470,6 +470,33 @@ def test_protocol_can_process_multiple_streams():
     assert second == ["second-result"]
     assert rng.geometric.call_count == 4
 
+def test_protocol_reproduceability():
+    mechanism = Mock(spec=Mechanism)
+    mechanism.perturb_event.return_value = "perturbed"
+
+    event_generator = Mock(spec=EventGenerator)
+    event_generator.generate_event.return_value = "synthetic"
+
+    input_streams = [
+            [None, None, "event-1", "event-2", "event-3", None, None],
+            [None, "event-1", "event-2", None, None, None, None]
+        ]
+
+    output_streams = [[] for _ in range(len(input_streams))]
+
+    for i in range(10):
+        protocol = LenPro(
+            epsilon=1,
+            delta_length=1,
+            perturbing_mechanism=mechanism,
+            synthetic_event_generator=event_generator,
+            rng=np.random.default_rng(seed=42),
+        )
+        for j in range(len(input_streams)):
+            output_streams[j].append(protocol.process_stream(input_streams[j]))
+            if i != 0:
+                assert output_streams[j][i] == output_streams[j][i - 1]
+
 def test_to_dict():
     mechanism = Mock(spec=Mechanism)
     mechanism.to_dict.return_value = {

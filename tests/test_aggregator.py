@@ -23,9 +23,9 @@ def test_register_protocol():
     aggregator = Aggregator()
     protocol = Mock(spec=LDPProtocol)
 
-    aggregator.register_protocol(protocol)
+    aggregator.register_protocol(protocol, ("test", "test"))
 
-    assert aggregator.protocols == [protocol]
+    assert aggregator.protocols == [(protocol, ("test", "test"))]
 
 
 def test_register_entry_level_measure():
@@ -141,6 +141,8 @@ def test_measure_run():
 
     assert result == [
         {
+            "protocol_id": "Mock",
+            "protocol_label": "Mock",
             "protocol": {
                 "name": "TestProtocol",
             },
@@ -300,6 +302,8 @@ def test_measure_run_without_measures():
 
     assert result == [
         {
+            "protocol_id": "Mock",
+            "protocol_label": "Mock",
             "protocol": {
                 "name": "Protocol",
             },

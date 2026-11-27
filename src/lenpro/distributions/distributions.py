@@ -25,8 +25,9 @@ class UniformDistribution(Distribution):
         self.high = high
         self.low = low
 
+    # Includes upper bound
     def sample(self) -> int:
-        return int(self.rng.integers(self.low, self.high))
+        return int(self.rng.integers(self.low, self.high, endpoint=True))
 
     def to_dict(self) -> dict:
         return {
@@ -36,8 +37,8 @@ class UniformDistribution(Distribution):
         }
 
     def pmf(self, x: int) -> float:
-        if x >= self.low and x < self.high:
-            return float(1 / (self.high - self.low))
+        if x >= self.low and x <= self.high:
+            return float(1 / (self.high - self.low + 1))
         return 0.0
 
 

@@ -25,7 +25,7 @@ def test_uniform_sample_is_integer_and_in_range():
     samples = [distribution.sample() for _ in range(100)]
 
     assert all(isinstance(sample, int) for sample in samples)
-    assert all(5 <= sample < 10 for sample in samples)
+    assert all(5 <= sample < 10 + 1 for sample in samples)
 
 
 def test_uniform_to_dict():
@@ -40,7 +40,7 @@ def test_uniform_to_dict():
 def test_uniform_pmf():
     distribution = UniformDistribution(low=5, high=10)
 
-    assert distribution.pmf(5) == 1 / 5
+    assert distribution.pmf(5) == 1 / 6
     assert distribution.pmf(0) == 0
 
 

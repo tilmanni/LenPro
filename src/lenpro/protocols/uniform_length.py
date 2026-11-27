@@ -11,7 +11,7 @@ Stream = Sequence[Any]
 
 class UniformLength(ldp_protocol.LDPProtocol):
 
-    def __init__(self, epsilon: float, uniform_length: int, delta_length: int, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, extendable: bool = False):
+    def __init__(self, epsilon: float, uniform_length: int, delta_length: int, perturbing_mechanism: mechanisms.Mechanism, synthetic_event_generator: event_generators.EventGenerator, rng: np.random.Generator | None = None, extendable: bool = False):
         super().__init__(epsilon=epsilon, delta_length=delta_length)
         if not np.isfinite(uniform_length):
             raise ValueError("uniform_length must be finite")
@@ -60,7 +60,7 @@ class UniformLength(ldp_protocol.LDPProtocol):
 
     def to_dict(self) -> dict:
         return {
-            "name": "Fixed Length",
+            "name": "UniformLength",
             "epsilon": self.epsilon,
             "delta_length": self.delta_length,
             "uniform_length": self.uniform_length,
